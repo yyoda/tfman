@@ -1,6 +1,5 @@
 import { join } from 'node:path';
 import { getWorkspaceRoot, loadJson } from '../../lib/utils.mjs';
-import { logger } from '../../lib/logger.mjs';
 
 export function resolveTargets(targets, depsData) {
   const dirsMap = new Map();
@@ -36,18 +35,16 @@ export function resolveTargets(targets, depsData) {
   return { includeList, failedTargets };
 }
 
-export async function selectFn(targetsInput) {
+export async function run(options) {
+  const { targets: targetsInput } = options;
   if (!targetsInput) {
-    throw new Error('Missing required argument: targetsInput');
+    throw new Error('Missing required argument: targets');
   }
-  
-  const root = await getWorkspaceRoot();
-  // Split by whitespace
-  const targets = targetsInput.split(/\s+/).filter(Boolean);
 
+  const root = await getWorkspaceRoot();
+  const targets = targetsInput.split(/\s+/).filter(Boolean);
   const depsFile = join(root, '.tfdeps.json');
   const depsData = await loadJson(depsFile);
-
   const { includeList, failedTargets } = resolveTargets(targets, depsData);
 
   if (failedTargets.length > 0) {
@@ -55,21 +52,4 @@ export async function selectFn(targetsInput) {
   }
 
   return includeList;
-}
-
-export async function run(options) {
-  const { targets: targetsInput } = options;
-  if (!targetsInput) {
-    throw new Error('Missing required argument: --targets');
-  }
-
-  try {
-    const includeList = await selectFn(targetsInput);
-
-    // Output JSON to stdout
-    console.log(JSON.stringify({ include: includeList }));
-  } catch (error) {
-    console.error(`::error::${error.message}`);
-    process.exit(1);
-  }
 }

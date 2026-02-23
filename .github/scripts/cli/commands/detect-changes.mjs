@@ -1,6 +1,5 @@
 import { join } from 'node:path';
 import { runCommand, getWorkspaceRoot, loadJson } from '../../lib/utils.mjs';
-import { logger } from '../../lib/logger.mjs';
 
 export async function runGitDiff(baseSha, headSha, root) {
   try {
@@ -65,15 +64,11 @@ export function calculateExecutionPaths(changedFiles, depsData) {
 
   // Resolve module dependencies
   if (changedModules.size > 0) {
-    const sortedChanged = Array.from(changedModules).sort();
-    logger.info(`Changed modules: ${JSON.stringify(sortedChanged)}`);
-
-    for (const mod of changedModules) {
-      const consumers = moduleUsageMap.get(mod);
+    for (const changedModule of changedModules) {
+      const consumers = moduleUsageMap.get(changedModule);
       if (consumers) {
         for (const consumer of consumers) {
           if (!affectedRoots.has(consumer)) {
-            logger.info(`Triggering ${consumer} due to change in ${mod}`);
             affectedRoots.add(consumer);
           }
         }
@@ -87,23 +82,16 @@ export function calculateExecutionPaths(changedFiles, depsData) {
   }));
 }
 
-export async function detectFn(base, head) {
+export async function run(options) {
+  const { base, head } = options;
+  if (!base || !head) {
+    throw new Error('Missing required arguments: base, head');
+  }
+
   const root = await getWorkspaceRoot();
   const changedFiles = await runGitDiff(base, head, root);
-
   const depsFile = join(root, '.tfdeps.json');
   const depsData = await loadJson(depsFile);
 
   return calculateExecutionPaths(changedFiles, depsData);
-}
-
-export async function run(options) {
-  const { base, head } = options;
-  if (!base || !head) {
-    throw new Error('Missing required arguments: --base, --head');
-  }
-
-  const result = await detectFn(base, head);
-  
-  console.log(JSON.stringify({ include: result }));
 }

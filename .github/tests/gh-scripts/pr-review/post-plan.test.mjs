@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert';
 import fs from 'fs';
 import { PlanCommentBuilder } from '../../../scripts/lib/comment-builder.mjs';
-import report from '../../../scripts/gh-scripts/pr-review/report.mjs';
+import report from '../../../scripts/gh-scripts/pr-review/post-plan.mjs';
 
 describe('report script', () => {
   let mockGithub;

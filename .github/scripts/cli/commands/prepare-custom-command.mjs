@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
-import { detectFn } from './detect-changes.mjs';
-import { selectFn } from './select-targets.mjs';
+import { run as runDetectChanges } from './detect-changes.mjs';
+import { run as runSelectTargets } from './select-targets.mjs';
 import { logger } from '../../lib/logger.mjs';
 
 export function parseCommand(commentBody) {
@@ -68,17 +68,13 @@ function getHelpMessage() {
 
 export async function run({ commentBody, baseSha, headSha, output }, dependencies = {}) {
   const {
-    _detectFn = detectFn,
-    _selectFn = selectFn,
+    _detectChanges = runDetectChanges,
+    _selectTargets = runSelectTargets,
     _writeFile = writeFile,
   } = dependencies;
 
-  logger.info(`Processing comment body...`);
-  
   const parsed = parseCommand(commentBody);
-
   if (!parsed) {
-    logger.info('Not a valid slash command or ignored.');
     return;
   }
 
@@ -96,18 +92,15 @@ export async function run({ commentBody, baseSha, headSha, output }, dependencie
 
   try {
     if (targets.length > 0) {
-      logger.info(`Targets detected: ${targets.join(', ')}`);
       // Since selectFn was usually called with a string of space-separated targets in the original logic:
       // "matrixParams = await selectFn(targets.join(' '));"
       // We keep that behavior but using the injected function.
-      matrixParams = await _selectFn(targets.join(' '));
+      matrixParams = await _selectTargets({ targets: targets.join(' ') });
     } else {
-      logger.info(`No targets specified. Detecting changes between ${baseSha} and ${headSha}...`);
-      matrixParams = await _detectFn(baseSha, headSha);
+      matrixParams = await _detectChanges({ base: baseSha, head: headSha });
     }
 
     if (matrixParams.length === 0) {
-      logger.info('No matching directories found.');
       await writeJson(output, {
         command: 'noop',
         result_message: 'No Terraform directories matched the criteria.',
@@ -126,11 +119,8 @@ export async function run({ commentBody, baseSha, headSha, output }, dependencie
       matrix: { include: matrixParams },
       result_message: message,
     }, _writeFile);
-    
-    logger.info(`Successfully processed ${command}. Matrix size: ${matrixParams.length}`);
 
   } catch (error) {
-    logger.error('Error processing command:', error);
     await writeJson(output, {
       command: 'error',
       result_message: `### Error Processing Request\n\n${error.message}`,

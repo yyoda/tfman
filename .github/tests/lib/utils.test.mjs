@@ -4,7 +4,6 @@ import assert from 'node:assert';
 import { writeFile, unlink, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { spawn } from 'node:child_process';
 
 import { runCommand, getWorkspaceRoot, loadJson } from '../../scripts/lib/utils.mjs';
 

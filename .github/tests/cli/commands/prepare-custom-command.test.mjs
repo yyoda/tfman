@@ -60,9 +60,9 @@ describe('cli/commands/prepare-custom-command', () => {
       output: 'output.json'
     };
 
-    it('should call detectFn when no targets provided', async () => {
+    it('should call detectChanges when no targets provided', async () => {
       let detectedDetails = null;
-      const _detectFn = async (base, head) => {
+      const _detectChanges = async ({ base, head }) => {
         detectedDetails = { base, head };
         return [{ path: 'auto/detected' }];
       };
@@ -74,7 +74,7 @@ describe('cli/commands/prepare-custom-command', () => {
 
       await run(
         { ...baseArgs },
-        { _detectFn, _writeFile }
+        { _detectChanges, _writeFile }
       );
 
       assert.deepStrictEqual(detectedDetails, { base: 'base', head: 'head' });
@@ -83,10 +83,10 @@ describe('cli/commands/prepare-custom-command', () => {
       assert.deepStrictEqual(writtenFile.content.matrix.include, [{ path: 'auto/detected' }]);
     });
 
-    it('should call selectFn when targets are provided', async () => {
+    it('should call selectTargets when targets are provided', async () => {
       let selectedTargets = null;
-      const _selectFn = async (targetsStr) => {
-        selectedTargets = targetsStr;
+      const _selectTargets = async ({ targets }) => {
+        selectedTargets = targets;
         return [{ path: 'manual/target' }];
       };
       
@@ -97,7 +97,7 @@ describe('cli/commands/prepare-custom-command', () => {
 
       await run(
         { ...baseArgs, commentBody: '/apply dev/app' },
-        { _selectFn, _writeFile }
+        { _selectTargets, _writeFile }
       );
 
       assert.strictEqual(selectedTargets, 'dev/app');
@@ -106,7 +106,7 @@ describe('cli/commands/prepare-custom-command', () => {
     });
 
     it('should handle dry-run (plan)', async () => {
-      const _detectFn = async () => [{ path: 'foo' }];
+      const _detectChanges = async () => [{ path: 'foo' }];
       let writtenFile = null;
       const _writeFile = async (path, content) => {
         writtenFile = { path, content: JSON.parse(content) };
@@ -114,7 +114,7 @@ describe('cli/commands/prepare-custom-command', () => {
 
       await run(
         { ...baseArgs, commentBody: '/apply --dry-run' },
-        { _detectFn, _writeFile }
+        { _detectChanges, _writeFile }
       );
 
       assert.strictEqual(writtenFile.content.command, 'plan');
@@ -122,7 +122,7 @@ describe('cli/commands/prepare-custom-command', () => {
     });
 
     it('should handle no matching directories', async () => {
-      const _detectFn = async () => [];
+      const _detectChanges = async () => [];
       let writtenFile = null;
       const _writeFile = async (path, content) => {
         writtenFile = { path, content: JSON.parse(content) };
@@ -130,7 +130,7 @@ describe('cli/commands/prepare-custom-command', () => {
 
       await run(
         { ...baseArgs },
-        { _detectFn, _writeFile }
+        { _detectChanges, _writeFile }
       );
 
       assert.strictEqual(writtenFile.content.command, 'noop');

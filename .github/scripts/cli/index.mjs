@@ -8,7 +8,6 @@ import { run as runPrepareCustomCommand } from './commands/prepare-custom-comman
 const args = process.argv.slice(2);
 if (args.length === 0) {
   console.error("Usage: node index.mjs <command> [options]");
-  console.error("Commands: detect-changes, select-targets, generate-deps, prepare-custom-command");
   process.exit(1);
 }
 
@@ -27,7 +26,8 @@ async function main() {
           },
           strict: false // allow other args? no, but strict ensures valid options
         });
-        await runDetectChanges(values);
+        const result = await runDetectChanges(values);
+        console.log(JSON.stringify({ include: result }));
         break;
       }
       case 'select-targets': {
@@ -37,7 +37,8 @@ async function main() {
             targets: { type: 'string' }
           }
         });
-        await runSelectTargets(values);
+        const result = await runSelectTargets(values);
+        console.log(JSON.stringify({ include: result }));
         break;
       }
       case 'generate-deps': {
@@ -72,7 +73,6 @@ async function main() {
       }
       default:
         console.error(`Unknown command: ${command}`);
-        console.error("Commands: detect-changes, select-targets, generate-deps, prepare-custom-command");
         process.exit(1);
     }
   } catch (error) {
