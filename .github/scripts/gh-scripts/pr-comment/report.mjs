@@ -7,12 +7,12 @@ import { CustomCommandCommentBuilder } from '../../lib/comment-builder.mjs';
  * @param {object} params.github - The Octokit client instance.
  * @param {object} params.context - The generic GitHub context.
  * @param {object} params.core - The actions core library.
+ * @param {object} params.glob - The actions glob library.
  * @param {object} params.config - Custom configuration object.
  */
-export default async ({ github, context, core, config }) => {
+export default async ({ github, context, core, glob, config }) => {
   const { result_message, command } = config;
-  const COMMENT_HEADER = CustomCommandCommentBuilder.COMMENT_HEADER;
-  
+
   // 1. Initialize Builder with Preamble
   const builder = new CustomCommandCommentBuilder(command);
   if (result_message) {
@@ -32,8 +32,8 @@ export default async ({ github, context, core, config }) => {
     );
     
     if (jobs) {
-        // Filter for matrix jobs named "apply on {path}"
-        applyJobs = jobs.filter(j => j.name.startsWith('apply on '));
+        // Filter for matrix jobs named "run on {path}"
+        applyJobs = jobs.filter(j => j.name.startsWith('run on '));
     }
   } catch (error) {
     if (core) core.warning(`Failed to fetch jobs: ${error.message}`);
@@ -43,8 +43,8 @@ export default async ({ github, context, core, config }) => {
   // 3. Add Jobs to Builder
   if (applyJobs.length > 0) {
     for (const job of applyJobs) {
-      // Extract clean target name: "apply on dev/app (matrix-1)" -> "dev/app"
-      let target = job.name.replace('apply on ', '');
+      // Extract clean target name: "run on dev/app (matrix-1)" -> "dev/app"
+      let target = job.name.replace('run on ', '');
       target = target.split(' (')[0]; 
       
       builder.addResult(target, job.conclusion, job.html_url);

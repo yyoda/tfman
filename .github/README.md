@@ -78,17 +78,17 @@ The following command is executed in the some channel. If you add a new workflow
 
 ---
 
-## GitHub Scripts (gh-script)
+## GitHub Scripts (gh-scripts)
 
-`.github/scripts/gh-script` contains scripts designed to be executed via `actions/github-script` within GitHub Actions workflows.
+`.github/scripts/gh-scripts` contains scripts designed to be executed via `actions/github-script` within GitHub Actions workflows.
 
 ### Features
 - **Actions Runtime Dependency**: Utilizes objects provided by the Actions runtime such as `github` (Octokit), `context`, and `core`.
 - **Logic Separation**: Separates complex logic (e.g., PR comment formatting, artifact aggregation) from YAML files into JavaScript modules to keep workflows clean.
 
 ### Scripts
-- `pr-review-post-plan.mjs`: Used in the `PRReview` workflow. Aggregates results from multiple parallel `terraform plan` jobs and posts them as a single consolidated comment on the Pull Request.
-- `pr-comment-report.mjs`: Used in the `PRComment` workflow. Formats the output of `terraform apply` executions and posts a report comment back to the PR.
+- `pr-review/report.mjs`: Used in the `PRReview` workflow. Aggregates results from multiple parallel `terraform plan` jobs and posts them as a single consolidated comment on the Pull Request.
+- `pr-comment/report.mjs`: Used in the `PRComment` workflow. Formats the output of `terraform apply` executions and posts a report comment back to the PR.
 
 ## GitHub Scripts CLI
 

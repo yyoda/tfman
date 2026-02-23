@@ -134,7 +134,7 @@ jobs:
           terraform show tfplan
 
           # 3. Save plan to text file WITHOUT color codes for PR comment automation
-          #    (The post-plan-comment script expects plain text without ANSI codes)
+          #    (The report script expects plain text without ANSI codes)
           terraform show -no-color tfplan > plan.txt
         env:
           TF_INPUT: false
@@ -159,7 +159,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  post-plan:
+  report:
     needs: [detect-changes, plan]
     runs-on: ubuntu-latest
     if: always() && needs.detect-changes.outputs.has-changes == 'true'

@@ -58,8 +58,8 @@ describe('report script', () => {
   it('should post success report when apply jobs succeed', async (t) => {
     // Setup jobs
     mockGithub.paginate = async () => [
-      { name: 'apply on dev/app', conclusion: 'success', html_url: 'http://log/1' },
-      { name: 'apply on prod/db', conclusion: 'success', html_url: 'http://log/2' }
+      { name: 'run on dev/app', conclusion: 'success', html_url: 'http://log/1' },
+      { name: 'run on prod/db', conclusion: 'success', html_url: 'http://log/2' }
     ];
     
     // Setup spy
@@ -78,8 +78,8 @@ describe('report script', () => {
 
   it('should post failure report when some apply jobs fail', async (t) => {
     mockGithub.paginate = async () => [
-      { name: 'apply on dev/app', conclusion: 'success', html_url: 'http://log/1' },
-      { name: 'apply on prod/db', conclusion: 'failure', html_url: 'http://log/2' }
+      { name: 'run on dev/app', conclusion: 'success', html_url: 'http://log/1' },
+      { name: 'run on prod/db', conclusion: 'failure', html_url: 'http://log/2' }
     ];
 
     let createCommentCall = null;
@@ -105,7 +105,7 @@ describe('report script', () => {
   it('should handle "plan" command specifically', async (t) => {
     mockConfig.command = 'plan';
     mockGithub.paginate = async () => [
-      { name: 'apply on dev/app', conclusion: 'success', html_url: 'http://log/1' }
+      { name: 'run on dev/app', conclusion: 'success', html_url: 'http://log/1' }
     ];
 
     let createCommentCall = null;
@@ -118,7 +118,7 @@ describe('report script', () => {
   
   it('should clean up matrix suffix from job names', async (t) => {
     mockGithub.paginate = async () => [
-      { name: 'apply on dev/app (ubuntu-latest)', conclusion: 'success', html_url: 'http://log/1' }
+      { name: 'run on dev/app (ubuntu-latest)', conclusion: 'success', html_url: 'http://log/1' }
     ];
 
     let createCommentCall = null;

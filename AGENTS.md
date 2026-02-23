@@ -90,9 +90,3 @@ When asking for clarification, present the information in the following structur
 ### 3. Prohibited Actions
 - Interpreting contradictions "at your own discretion" and generating or modifying code without confirmation.
 - Proceeding with implementation based on guesswork ("It is probably this") while ambiguities remain.
-
-# 🔍 Agent Pre-Flight Checklist
-Before providing a solution, verify the following:
-- [ ] Has `terraform fmt` been applied to ensure clean diffs?
-- [ ] Do all new variables include a meaningful `description`?
-- [ ] Does this configuration align with the existing Backend/S3 state locking?
