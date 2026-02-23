@@ -5,7 +5,7 @@ resource "random_id" "main" {
 module "main" {
   source = "../../modules"
   triggers = {
-    name = "test2"
+    name = "test2-1"
     id   = random_id.main.hex
   }
 }
