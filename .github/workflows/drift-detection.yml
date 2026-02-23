@@ -29,6 +29,7 @@ jobs:
         run: |
           # Extract 'dirs' array and wrap it in 'include' for the matrix strategy
           MATRIX_JSON=$(jq -c '{include: .dirs}' .tfdeps.json)
+          echo "Matrix: $MATRIX_JSON"
           echo "matrix=$MATRIX_JSON" >> "$GITHUB_OUTPUT"
 
   drift-detection:
