@@ -12,6 +12,7 @@ permissions:
   id-token: write
   contents: read
   pull-requests: write
+  statuses: write
 
 env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
@@ -28,6 +29,7 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       ref: ${{ steps.pr-details.outputs.ref }}
       config: ${{ steps.set-matrix.outputs.config }}
+      head_sha: ${{ steps.pr-details.outputs.head_sha }}
     steps:
       - name: Add reaction
         uses: actions/github-script@v7
@@ -173,6 +175,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           CONFIG: ${{ needs.setup.outputs.config }}
+          HEAD_SHA: ${{ needs.setup.outputs.head_sha }}
         with:
           script: |
             const { default: postApplyComment } = await import('${{ github.workspace }}/.github/scripts/gh-script/pr-comment-report.mjs');
