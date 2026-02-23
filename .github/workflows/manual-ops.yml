@@ -50,6 +50,7 @@ jobs:
           node .github/scripts/cli/index.mjs select-targets --targets "$TARGETS" --output .tfmatrix.json
           
           # Read the generated file and set it as output
+          cat .tfmatrix.json
           echo "matrix=$(cat .tfmatrix.json)" >> $GITHUB_OUTPUT
 
   apply:
