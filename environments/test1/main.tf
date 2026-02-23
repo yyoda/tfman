@@ -13,3 +13,7 @@ module "main" {
 output "result" {
   value = module.main
 }
+
+output "test" {
+  value = "test"
+}
