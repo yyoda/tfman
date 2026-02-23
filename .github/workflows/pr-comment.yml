@@ -98,15 +98,12 @@ jobs:
           script: |
             if (!process.env.CONFIG) return;
             const config = JSON.parse(process.env.CONFIG);
-            const command = config.command;
-            const contextName = `terraform/${command}`;
-            
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: process.env.HEAD_SHA,
               state: 'pending',
-              context: contextName,
+              context: `terraform/${config.command}`,
               description: `Terraform ${command} is running...`,
               target_url: `${context.payload.repository.html_url}/actions/runs/${context.runId}`
             });
@@ -187,20 +184,41 @@ jobs:
         run: terraform apply -auto-approve -input=false
 
 
-  report:
-    needs: [setup, apply]
+  post-run:
+    needs: [run]
     if: always() && needs.setup.result != 'skipped'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repo
-      - uses: actions/checkout@v4
+        uses: actions/checkout@v4
+
+      - name: Update Commit Status
+        uses: actions/github-script@v7
+        env:
+          CONFIG: ${{ needs.setup.outputs.config }}
+          HEAD_SHA: ${{ needs.setup.outputs.head_sha }}
+          JOB_RESULT: ${{ needs.run.result }}
+        with:
+          script: |
+            if (!process.env.CONFIG) return;
+            const config = JSON.parse(process.env.CONFIG);
+            const result = process.env.JOB_RESULT;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.HEAD_SHA,
+              state: (result === 'success' || result === 'skipped') ? 'success' : 'failure',
+              context: `terraform/${config.command}`,
+              description: state === 'success' ? 'All Terraform jobs passed' : 'Some Terraform jobs failed',
+              target_url: `${context.payload.repository.html_url}/actions/runs/${context.runId}`
+            });
 
       - name: Post Command Execution Result
         uses: actions/github-script@v7
         env:
           CONFIG: ${{ needs.setup.outputs.config }}
-          HEAD_SHA: ${{ needs.setup.outputs.head_sha }}
         with:
           script: |
+            if (!process.env.CONFIG) return;
             const { default: script } = await import('${{ github.workspace }}/.github/scripts/gh-scripts/pr-comment/report.mjs');
-            await script({ github, context, core, glob, JSON.parse(process.env.CONFIG) });
+            await script({ github, context, core, glob, config: JSON.parse(process.env.CONFIG) });

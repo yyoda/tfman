@@ -56,35 +56,6 @@ export default async ({ github, context, core, glob, config }) => {
       const runUrl = `${repoUrl}/actions/runs/${context.runId}`;
       builder.setWorkflowRunUrl(runUrl);
     }
-
-    // --- Commit Status Update Logic ---
-    const headSha = process.env.HEAD_SHA;
-    if (headSha) {
-      const allSuccess = applyJobs.every(job => job.conclusion === 'success');
-      const state = allSuccess ? 'success' : 'failure';
-      const contextName = `terraform/${command || 'apply'}`; 
-      const failedCount = applyJobs.filter(j => j.conclusion !== 'success').length;
-      const description = allSuccess 
-        ? 'All Terraform jobs passed' 
-        : `${failedCount} job(s) failed or cancelled`;
-
-      try {
-        await github.rest.repos.createCommitStatus({
-          owner: context.repo.owner,
-          repo: context.repo.repo,
-          sha: headSha,
-          state: state,
-          context: contextName,
-          description: description,
-          target_url: `${context.payload.repository.html_url}/actions/runs/${context.runId}`
-        });
-        if (core) core.info(`Commit status updated: ${state} (${contextName})`);
-      } catch (error) {
-        const msg = `Failed to update commit status: ${error.message}`;
-        if (core) core.warning(msg);
-        else console.error(msg);
-      }
-    }
   } else {
     // Info log if no jobs found, helpful for debugging
     if (core) core.info('No apply jobs found to report.');
