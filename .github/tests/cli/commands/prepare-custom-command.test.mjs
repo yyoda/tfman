@@ -57,7 +57,6 @@ describe('cli/commands/prepare-custom-command', () => {
       commentBody: '/apply',
       baseSha: 'base',
       headSha: 'head',
-      output: 'output.json'
     };
 
     it('should call detectChanges when no targets provided', async () => {
@@ -67,20 +66,14 @@ describe('cli/commands/prepare-custom-command', () => {
         return [{ path: 'auto/detected' }];
       };
       
-      let writtenFile = null;
-      const _writeFile = async (path, content) => {
-        writtenFile = { path, content: JSON.parse(content) };
-      };
-
-      await run(
+      const result = await run(
         { ...baseArgs },
-        { _detectChanges, _writeFile }
+        { _detectChanges }
       );
 
       assert.deepStrictEqual(detectedDetails, { base: 'base', head: 'head' });
-      assert.strictEqual(writtenFile.path, 'output.json');
-      assert.strictEqual(writtenFile.content.command, 'apply');
-      assert.deepStrictEqual(writtenFile.content.matrix.include, [{ path: 'auto/detected' }]);
+      assert.strictEqual(result.command, 'apply');
+      assert.deepStrictEqual(result.matrix.include, [{ path: 'auto/detected' }]);
     });
 
     it('should call selectTargets when targets are provided', async () => {
@@ -90,66 +83,48 @@ describe('cli/commands/prepare-custom-command', () => {
         return [{ path: 'manual/target' }];
       };
       
-      let writtenFile = null;
-      const _writeFile = async (path, content) => {
-        writtenFile = { path, content: JSON.parse(content) };
-      };
-
-      await run(
+      const result = await run(
         { ...baseArgs, commentBody: '/apply dev/app' },
-        { _selectTargets, _writeFile }
+        { _selectTargets }
       );
 
       assert.strictEqual(selectedTargets, 'dev/app');
-      assert.strictEqual(writtenFile.content.command, 'apply');
-      assert.deepStrictEqual(writtenFile.content.matrix.include, [{ path: 'manual/target' }]);
+      assert.strictEqual(result.command, 'apply');
+      assert.deepStrictEqual(result.matrix.include, [{ path: 'manual/target' }]);
     });
 
     it('should handle dry-run (plan)', async () => {
       const _detectChanges = async () => [{ path: 'foo' }];
-      let writtenFile = null;
-      const _writeFile = async (path, content) => {
-        writtenFile = { path, content: JSON.parse(content) };
-      };
-
-      await run(
+      
+      const result = await run(
         { ...baseArgs, commentBody: '/apply --dry-run' },
-        { _detectChanges, _writeFile }
+        { _detectChanges }
       );
 
-      assert.strictEqual(writtenFile.content.command, 'plan');
-      assert.ok(writtenFile.content.result_message.includes('Planning'));
+      assert.strictEqual(result.command, 'plan');
+      assert.ok(result.result_message.includes('Planning'));
     });
 
     it('should handle no matching directories', async () => {
       const _detectChanges = async () => [];
-      let writtenFile = null;
-      const _writeFile = async (path, content) => {
-        writtenFile = { path, content: JSON.parse(content) };
-      };
 
-      await run(
+      const result = await run(
         { ...baseArgs },
-        { _detectChanges, _writeFile }
+        { _detectChanges }
       );
 
-      assert.strictEqual(writtenFile.content.command, 'noop');
-      assert.ok(writtenFile.content.result_message.includes('No Terraform directories'));
+      assert.strictEqual(result.command, 'noop');
+      assert.ok(result.result_message.includes('No Terraform directories'));
     });
 
     it('should handle help command', async () => {
-      let writtenFile = null;
-      const _writeFile = async (path, content) => {
-        writtenFile = { path, content: JSON.parse(content) };
-      };
-
-      await run(
+      const result = await run(
         { ...baseArgs, commentBody: '/apply --help' },
-        { _writeFile }
+        {}
       );
 
-      assert.strictEqual(writtenFile.content.command, 'help');
-      assert.ok(writtenFile.content.result_message.includes('Usage'));
+      assert.strictEqual(result.command, 'help');
+      assert.ok(result.result_message.includes('Usage'));
     });
   });
 });

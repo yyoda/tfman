@@ -73,8 +73,7 @@ jobs:
           node .github/scripts/cli/index.mjs prepare-custom-command \
             --comment-body "$COMMENT_BODY" \
             --base-sha "$BASE_SHA" \
-            --head-sha "$HEAD_SHA" \
-            --output processResult.json
+            --head-sha "$HEAD_SHA" > processResult.json
 
           # Output the matrix separately
           MATRIX=$(jq -c '.matrix // empty' processResult.json)

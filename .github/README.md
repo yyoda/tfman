@@ -163,8 +163,7 @@ Parses a PR command comment (e.g., `/apply app/dev`) and prepares the execution 
 node .github/scripts/cli/index.mjs prepare-custom-command \
   --comment-body "<body>" \
   --base-sha <sha> \
-  --head-sha <sha> \
-  [--output <path>]
+  --head-sha <sha>
 ```
 
 ### Configuration Files

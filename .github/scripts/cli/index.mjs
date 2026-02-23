@@ -59,16 +59,17 @@ async function main() {
           options: {
             'comment-body': { type: 'string' },
             'base-sha': { type: 'string' },
-            'head-sha': { type: 'string' },
-            output: { type: 'string' }
+            'head-sha': { type: 'string' }
           }
         });
-        await runPrepareCustomCommand({
+        const result = await runPrepareCustomCommand({
           commentBody: values['comment-body'],
           baseSha: values['base-sha'],
-          headSha: values['head-sha'],
-          output: values.output
+          headSha: values['head-sha']
         });
+        if (result) {
+          console.log(JSON.stringify(result));
+        }
         break;
       }
       default:

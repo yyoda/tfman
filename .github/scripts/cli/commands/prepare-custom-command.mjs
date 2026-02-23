@@ -1,7 +1,5 @@
-import { writeFile } from 'node:fs/promises';
 import { run as runDetectChanges } from './detect-changes.mjs';
 import { run as runSelectTargets } from './select-targets.mjs';
-import { logger } from '../../lib/logger.mjs';
 
 export function parseCommand(commentBody) {
   if (!commentBody) return null;
@@ -66,25 +64,22 @@ function getHelpMessage() {
 `.trim();
 }
 
-export async function run({ commentBody, baseSha, headSha, output }, dependencies = {}) {
+export async function run({ commentBody, baseSha, headSha }, dependencies = {}) {
   const {
     _detectChanges = runDetectChanges,
     _selectTargets = runSelectTargets,
-    _writeFile = writeFile,
   } = dependencies;
 
   const parsed = parseCommand(commentBody);
   if (!parsed) {
-    return;
+    return null;
   }
 
   if (parsed.command === 'help') {
-    logger.info('Help command detected.');
-    await writeJson(output, {
+    return {
       command: 'help',
       result_message: parsed.helpMsg,
-    }, _writeFile);
-    return;
+    };
   }
 
   const { command, targets } = parsed;
@@ -92,48 +87,33 @@ export async function run({ commentBody, baseSha, headSha, output }, dependencie
 
   try {
     if (targets.length > 0) {
-      // Since selectFn was usually called with a string of space-separated targets in the original logic:
-      // "matrixParams = await selectFn(targets.join(' '));"
-      // We keep that behavior but using the injected function.
       matrixParams = await _selectTargets({ targets: targets.join(' ') });
     } else {
       matrixParams = await _detectChanges({ base: baseSha, head: headSha });
     }
 
     if (matrixParams.length === 0) {
-      await writeJson(output, {
+      return {
         command: 'noop',
         result_message: 'No Terraform directories matched the criteria.',
-      }, _writeFile);
-      return;
+      };
     }
 
-    // Determine target count for message
     const targetCount = matrixParams.length;
     const action = command === 'plan' ? 'Planning' : 'Applying';
     const message = `### ${action} ${targetCount} targets\n\n` + 
                     matrixParams.map(m => `- \`${m.path}\``).join('\n');
 
-    await writeJson(output, {
+    return {
       command: command,
       matrix: { include: matrixParams },
       result_message: message,
-    }, _writeFile);
+    };
 
   } catch (error) {
-    await writeJson(output, {
+    return {
       command: 'error',
       result_message: `### Error Processing Request\n\n${error.message}`,
-    }, _writeFile);
-    process.exit(1);
-  }
-}
-
-async function writeJson(filePath, data, _writeFile = writeFile) {
-  const content = JSON.stringify(data, null, 2);
-  if (filePath) {
-    await _writeFile(filePath, content);
-  } else {
-    console.log(content);
+    };
   }
 }
