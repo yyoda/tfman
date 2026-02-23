@@ -23,8 +23,7 @@ async function main() {
           args: commandArgs,
           options: {
             base: { type: 'string' },
-            head: { type: 'string' },
-            output: { type: 'string' }
+            head: { type: 'string' }
           },
           strict: false // allow other args? no, but strict ensures valid options
         });
@@ -35,8 +34,7 @@ async function main() {
         const { values } = parseArgs({
           args: commandArgs,
           options: {
-            targets: { type: 'string' },
-            output: { type: 'string' }
+            targets: { type: 'string' }
           }
         });
         await runSelectTargets(values);

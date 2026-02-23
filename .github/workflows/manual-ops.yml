@@ -47,11 +47,11 @@ jobs:
           TARGETS: ${{ inputs.targets }}
         run: |
           # Use the select-targets command to generate the matrix json
-          node .github/scripts/cli/index.mjs select-targets --targets "$TARGETS" --output .tfmatrix.json
+          MATRIX=$(node .github/scripts/cli/index.mjs select-targets --targets "$TARGETS")
           
-          # Read the generated file and set it as output
-          cat .tfmatrix.json
-          echo "matrix=$(cat .tfmatrix.json)" >> $GITHUB_OUTPUT
+          # Echo to stdout for logging and set as output
+          echo "$MATRIX"
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
   apply:
     needs: setup

@@ -38,17 +38,16 @@ jobs:
       - name: Detect Changes
         id: set-matrix
         run: |
-          # see: https://zenn.dev/hkusu/articles/c731862051438b
-          node .github/scripts/cli/index.mjs detect-changes \
+          # Detect changes and capture JSON output
+          CHANGES=$(node .github/scripts/cli/index.mjs detect-changes \
             --base ${{ github.event.pull_request.base.sha }} \
-            --head ${{ github.event.pull_request.head.sha }}
-
-          # Output the entire matrix as a JSON string
-          echo "matrix=$(cat .tfchanges.json)" | tee -a "$GITHUB_OUTPUT"
+            --head ${{ github.event.pull_request.head.sha }})
           
-          # Check if the list inside "include" is empty
-          HAS_CHANGES=$(jq '.include | length > 0' .tfchanges.json)
-          echo "has-changes=$HAS_CHANGES" >> $GITHUB_OUTPUT
+          echo "matrix=$CHANGES" >> "$GITHUB_OUTPUT"
+          
+          # Check if include array has items
+          HAS_CHANGES=$(echo "$CHANGES" | jq '.include | length > 0')
+          echo "has-changes=$HAS_CHANGES" >> "$GITHUB_OUTPUT"
 
   plan:
     needs: detect-changes

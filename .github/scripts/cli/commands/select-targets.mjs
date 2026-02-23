@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import { writeFile } from 'node:fs/promises';
 import { getWorkspaceRoot, loadJson } from '../../lib/utils.mjs';
 import { logger } from '../../lib/logger.mjs';
 
@@ -59,7 +58,7 @@ export async function selectFn(targetsInput) {
 }
 
 export async function run(options) {
-  const { targets: targetsInput, output } = options;
+  const { targets: targetsInput } = options;
   if (!targetsInput) {
     throw new Error('Missing required argument: --targets');
   }
@@ -67,15 +66,10 @@ export async function run(options) {
   try {
     const includeList = await selectFn(targetsInput);
 
-    const root = await getWorkspaceRoot();
-    const outputPath = output || join(root, '.tfmatrix.json');
-
-    const matrixJson = { include: includeList };
-    await writeFile(outputPath, JSON.stringify(matrixJson));
-
-    logger.info(`Matrix JSON written to ${outputPath}`);
+    // Output JSON to stdout
+    console.log(JSON.stringify({ include: includeList }));
   } catch (error) {
-    console.log(`::error::${error.message}`);
+    console.error(`::error::${error.message}`);
     process.exit(1);
   }
 }

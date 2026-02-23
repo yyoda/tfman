@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import { writeFile } from 'node:fs/promises';
 import { runCommand, getWorkspaceRoot, loadJson } from '../../lib/utils.mjs';
 import { logger } from '../../lib/logger.mjs';
 
@@ -99,16 +98,12 @@ export async function detectFn(base, head) {
 }
 
 export async function run(options) {
-  const { base, head, output } = options;
+  const { base, head } = options;
   if (!base || !head) {
     throw new Error('Missing required arguments: --base, --head');
   }
 
   const result = await detectFn(base, head);
-
-  const root = await getWorkspaceRoot();
-  const outputPath = output || join(root, '.tfchanges.json');
-  await writeFile(outputPath, JSON.stringify({ include: result }));
-
-  logger.info(`Changes written to ${outputPath}`);
+  
+  console.log(JSON.stringify({ include: result }));
 }
