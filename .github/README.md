@@ -177,4 +177,8 @@ List of glob patterns to exclude from dependency scanning.
 
 ### Development
 
-Tests are located in `.github/tests/cli`. Run tests using the repository's test runner (e.g., `npm test`).
+Tests are located in `.github/tests`. Run tests using the node test runner.
+
+```bash
+node --test .github/tests/**/*.test.mjs
+```
