@@ -21,6 +21,7 @@ jobs:
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/apply') &&
+      vars.TF_APPLY_USERS != '' &&
       contains(fromJson(vars.TF_APPLY_USERS), github.event.comment.user.login)
     runs-on: ubuntu-latest
     outputs:

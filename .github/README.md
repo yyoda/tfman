@@ -23,7 +23,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - `targets`: Directory paths to apply (space-separated). Example: `app/dev app/prod`
     - `command`: The command to execute. The default is `apply`, but `plan` can be specified as an option.
 - **CONDITIONS**:
-    - **Execution User Restriction**: The executor (`github.actor`) must be included in the repository variable `TF_APPLY_USERS`.
+    - **Execution User Restriction**: The executor (`github.actor`) must be included in `TF_APPLY_USERS`. If not defined, the workflow is skipped.
 
 ### PRComment
 - **PURPOSE**:
@@ -35,7 +35,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - **`/apply --dry-run`**
         - Executes plan instead of apply.
 - **CONDITIONS**:
-- **Execution User Restriction**: The comment poster must be included in the repository variable `TF_APPLY_USERS`.
+- **Execution User Restriction**: The comment poster must be included in `TF_APPLY_USERS`. If not defined, the workflow is skipped.
 
 ### DriftDetection
 - **PURPOSE**:
@@ -49,7 +49,12 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 ### Operations & Configuration
 
 #### Execution User Restriction (`TF_APPLY_USERS`)
-`manual-ops.yml` and `pr-comment.yml` restrict executable users because they have powerful privileges. The following variable must be registered in the GitHub repository settings (`Settings > Secrets and variables > Actions > Variables`).
+`manual-ops.yml` and `pr-comment.yml` restrict executable users because they have powerful privileges.
+
+> [!IMPORTANT]
+> This variable is mandatory for `ManualOps` and `PRComment` features to work. If `TF_APPLY_USERS` is missing or empty, these workflows will always be skipped (disabled).
+
+The following variable must be registered in the GitHub repository settings (`Settings > Secrets and variables > Actions > Variables`).
 - **Name**: `TF_APPLY_USERS`
 - **Value**: A **JSON array** of allowed GitHub usernames. Example: `["user1", "user2", "admin-user"]`
 

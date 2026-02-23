@@ -30,7 +30,7 @@ env:
 jobs:
   setup:
     runs-on: ubuntu-latest
-    if: contains(fromJson(vars.TF_APPLY_USERS), github.actor)
+    if: vars.TF_APPLY_USERS != '' && contains(fromJson(vars.TF_APPLY_USERS), github.actor)
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
