@@ -189,7 +189,7 @@ jobs:
 
   report:
     needs: [setup, apply]
-    if: always()
+    if: always() && needs.setup.result != 'skipped'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
