@@ -67,6 +67,7 @@ Follow HashiCorp's official [Terraform Style Guide](https://developer.hashicorp.
 - **Priority**: Security > Reliability > Cost > Performance.
 
 # 🤖 Agent Instructions & Restrictions
+- **File Caching**: Do not read the same file multiple times within a single thread. Cache the content of files you have already read. If you need to refer to a file again, use the context you already have.
 - **Web Search**: When encountering a problem, first search the web. Web searches do not require permission.
 - **Time Limits**: Do not continue processing for a long time without notice. If a task is expected to take more than 10 minutes, obtain permission before proceeding.
 - **Complexity**: If you sense that a task may become difficult or prolonged, stop the task, report the current progress, and outline the next steps.
