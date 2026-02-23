@@ -1,0 +1,125 @@
+name: ManualOps
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: 'Target directories to apply (space-separated paths, e.g., account/dev account/prod)'
+        required: true
+        type: string
+      command:
+        description: 'Terraform command to execute'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: apply
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    if: contains(fromJson(vars.TF_APPLY_USERS), github.actor)
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Parse Targets and Generate Matrix
+        id: set-matrix
+        env:
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          # Use the select-targets command to generate the matrix json
+          node .github/scripts/cli/index.mjs select-targets --targets "$TARGETS" --output .tfmatrix.json
+          
+          # Read the generated file and set it as output
+          echo "matrix=$(cat .tfmatrix.json)" >> $GITHUB_OUTPUT
+
+  apply:
+    needs: setup
+    runs-on: ubuntu-latest
+    name: apply on ${{ matrix.path }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.path }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Cache Dir
+        run: mkdir -p $TF_PLUGIN_CACHE_DIR
+
+      - name: Load .env.ci
+        run: test -f .env.ci && cat .env.ci >> $GITHUB_ENV
+
+      - name: Configure AWS Credentials
+        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/aws') || contains(matrix.providers, 'registry.terraform.io/hashicorp/awscc')
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure Azure Credentials
+        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/azurerm')
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Configure GCP Credentials
+        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/google')
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Cache Terraform Providers
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: ${{ runner.os }}-tf-plugin-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-tf-plugin-
+
+      - name: Read Terraform Version
+        id: tf-version
+        run: echo "version=$(cat .terraform-version)" >> $GITHUB_OUTPUT
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ steps.tf-version.outputs.version }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        if: inputs.command == 'plan'
+        run: terraform plan -input=false
+
+      - name: Terraform Apply
+        if: inputs.command == 'apply'
+        run: terraform apply -auto-approve -input=false

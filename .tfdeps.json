@@ -1,0 +1,27 @@
+{
+  "dirs": [
+    {
+      "path": "environments/test1",
+      "providers": [
+        "registry.terraform.io/hashicorp/null",
+        "registry.terraform.io/hashicorp/random"
+      ]
+    },
+    {
+      "path": "environments/test2",
+      "providers": [
+        "registry.terraform.io/hashicorp/null",
+        "registry.terraform.io/hashicorp/random"
+      ]
+    }
+  ],
+  "modules": [
+    {
+      "source": "modules",
+      "usedIn": [
+        "environments/test1",
+        "environments/test2"
+      ]
+    }
+  ]
+}
