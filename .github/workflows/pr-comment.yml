@@ -88,6 +88,29 @@ jobs:
           CONFIG=$(jq -c 'del(.matrix)' processResult.json)
           echo "config=$CONFIG" >> $GITHUB_OUTPUT
 
+      - name: Set Pending Status
+        if: steps.set-matrix.outputs.matrix != ''
+        uses: actions/github-script@v7
+        env:
+          CONFIG: ${{ steps.set-matrix.outputs.config }}
+          HEAD_SHA: ${{ steps.pr-details.outputs.head_sha }}
+        with:
+          script: |
+            if (!process.env.CONFIG) return;
+            const config = JSON.parse(process.env.CONFIG);
+            const command = config.command;
+            const contextName = `terraform/${command}`;
+            
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.HEAD_SHA,
+              state: 'pending',
+              context: contextName,
+              description: `Terraform ${command} is running...`,
+              target_url: `${context.payload.repository.html_url}/actions/runs/${context.runId}`
+            });
+
   apply:
     needs: setup
     if: needs.setup.outputs.matrix != '' && fromJson(needs.setup.outputs.matrix).include[0] != null
