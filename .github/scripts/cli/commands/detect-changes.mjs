@@ -108,7 +108,7 @@ export async function run(options) {
 
   const root = await getWorkspaceRoot();
   const outputPath = output || join(root, '.tfchanges.json');
-  await writeFile(outputPath, JSON.stringify({ include: result }, null, 2));
+  await writeFile(outputPath, JSON.stringify({ include: result }));
 
   logger.info(`Changes written to ${outputPath}`);
 }
