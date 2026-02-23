@@ -70,8 +70,26 @@ Follow HashiCorp's official [Terraform Style Guide](https://developer.hashicorp.
 - **Web Search**: When encountering a problem, first search the web. Web searches do not require permission.
 - **Time Limits**: Do not continue processing for a long time without notice. If a task is expected to take more than 10 minutes, obtain permission before proceeding.
 - **Complexity**: If you sense that a task may become difficult or prolonged, stop the task, report the current progress, and outline the next steps.
-- **Conversation**: When you don't understand, admit it honestly. If there's a logical flaw in the instructions, stop immediately and don't dwell on it any further.
 - **Self-Review Protocol**: Before declaring a task complete, you MUST perform a self-review of your changes following the "Create -> Self-Review -> Fix -> Report" cycle. Evaluate your code against the "Best Practices" listed above.
+
+## 🛡️ Fundamental Principles for Corrective Actions
+If instructions are contradictory, unclear, or carry risk, **STOP immediately** before rewriting any code and verify with the user.
+
+### 1. Mandatory Stop & Query Scenarios
+- **Logical Contradictions**: Instructions that require implementing conflicting behaviors while maintaining existing functionality.
+- **Unclear Impact Scope**: When changes are widespread and there is a concern about breaking dependencies, but no mitigation strategy is provided.
+- **Missing Specifications**: Lack of defined rules for error handling or behavior in specific edge cases.
+- **Inconsistent Instructions**: When the prompt's instructions clearly conflict with the existing code structure or naming conventions.
+
+### 2. Query Format
+When asking for clarification, present the information in the following structure:
+1. **Detected Issue**: Why the process was stopped (point out the contradiction or risk).
+2. **Inferred Intent**: What the user likely intended to do (hypothesis).
+3. **Proposed Solutions**: Present options for decision-making (e.g., "Option A: Prioritize X", "Option B: Prioritize Y").
+
+### 3. Prohibited Actions
+- Interpreting contradictions "at your own discretion" and generating or modifying code without confirmation.
+- Proceeding with implementation based on guesswork ("It is probably this") while ambiguities remain.
 
 # 🔍 Agent Pre-Flight Checklist
 Before providing a solution, verify the following:
