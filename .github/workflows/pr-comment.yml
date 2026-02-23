@@ -201,7 +201,7 @@ jobs:
           HEAD_SHA: ${{ needs.setup.outputs.head_sha }}
         with:
           script: |
-            const { default: postApplyComment } = await import('${{ github.workspace }}/.github/scripts/gh-script/pr-comment-report.mjs');
+            const { default: postApplyComment } = await import('${{ github.workspace }}/.github/scripts/gh-scripts/pr-comment/report.mjs');
             
             let config = {};
             try {

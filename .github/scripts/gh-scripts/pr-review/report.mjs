@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { PlanCommentBuilder } from '../lib/comment-builder.mjs';
+import { PlanCommentBuilder } from '../../lib/comment-builder.mjs';
 
 /**
  * GitHub Actions script entry point for posting plan review comments.

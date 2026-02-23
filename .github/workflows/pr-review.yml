@@ -179,6 +179,6 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const { default: script } = await import('${{ github.workspace }}/.github/scripts/gh-script/pr-review-post-plan.mjs');
+            const { default: script } = await import('${{ github.workspace }}/.github/scripts/gh-scripts/pr-review/report.mjs');
             await script({github, context, core, glob});
 

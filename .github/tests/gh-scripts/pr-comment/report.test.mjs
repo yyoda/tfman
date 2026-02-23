@@ -1,8 +1,8 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import postApplyComment from '../../scripts/gh-script/pr-comment-report.mjs';
+import report from '../../../scripts/gh-scripts/pr-comment/report.mjs';
 
-describe('pr-comment-report script', () => {
+describe('report script', () => {
   let mockGithub;
   let mockContext;
   let mockConfig;
@@ -48,7 +48,7 @@ describe('pr-comment-report script', () => {
     mockGithub.rest.issues.createComment = async (args) => { createCommentCall = args; };
     
     // Run
-    await postApplyComment({ github: mockGithub, context: mockContext, config: mockConfig });
+    await report({ github: mockGithub, context: mockContext, config: mockConfig });
 
     // Assert
     assert.ok(createCommentCall, 'should call createComment');
@@ -66,11 +66,10 @@ describe('pr-comment-report script', () => {
     let createCommentCall = null;
     mockGithub.rest.issues.createComment = async (args) => { createCommentCall = args; };
 
-    await postApplyComment({ github: mockGithub, context: mockContext, config: mockConfig });
+    await report({ github: mockGithub, context: mockContext, config: mockConfig });
 
     assert.ok(createCommentCall);
     // Modified expectation: Check for new header
-    assert.ok(createCommentCall.body.includes('## 📋 Workflow Execution Report'));
     assert.ok(createCommentCall.body.includes('### ✅ Apply Succeeded'));
     
     assert.match(createCommentCall.body, /\|\s*`dev\/app`\s*\|\s*✅\s*\|\s*\[Log\]\(http:\/\/log\/1\)\s*\|/);
@@ -86,7 +85,7 @@ describe('pr-comment-report script', () => {
     let createCommentCall = null;
     mockGithub.rest.issues.createComment = async (args) => { createCommentCall = args; };
 
-    await postApplyComment({ github: mockGithub, context: mockContext, config: mockConfig });
+    await report({ github: mockGithub, context: mockContext, config: mockConfig });
 
     assert.ok(createCommentCall.body.includes('### ❌ Apply Failed'));
     assert.match(createCommentCall.body, /\|\s*`prod\/db`\s*\|\s*❌\s*\|\s*\[Log\]\(http:\/\/log\/2\)\s*\|/);
@@ -98,7 +97,7 @@ describe('pr-comment-report script', () => {
     let createCommentCall = null;
     mockGithub.rest.issues.createComment = async (args) => { createCommentCall = args; };
 
-    await postApplyComment({ github: mockGithub, context: mockContext, config: mockConfig });
+    await report({ github: mockGithub, context: mockContext, config: mockConfig });
     
     assert.ok(createCommentCall.body.includes('Custom message from caller'));
   });
@@ -112,7 +111,7 @@ describe('pr-comment-report script', () => {
     let createCommentCall = null;
     mockGithub.rest.issues.createComment = async (args) => { createCommentCall = args; };
 
-    await postApplyComment({ github: mockGithub, context: mockContext, config: mockConfig });
+    await report({ github: mockGithub, context: mockContext, config: mockConfig });
 
     assert.ok(createCommentCall.body.includes('✅ Plan Completed'));
   });
@@ -125,7 +124,7 @@ describe('pr-comment-report script', () => {
     let createCommentCall = null;
     mockGithub.rest.issues.createComment = async (args) => { createCommentCall = args; };
     
-    await postApplyComment({ github: mockGithub, context: mockContext, config: mockConfig });
+    await report({ github: mockGithub, context: mockContext, config: mockConfig });
     
     // Should contain `dev/app` without suffix
     assert.match(createCommentCall.body, /\|\s*`dev\/app`\s*\|/);
@@ -143,7 +142,7 @@ describe('pr-comment-report script', () => {
       deleteCommentCalled = true;
     };
 
-    await postApplyComment({ github: mockGithub, context: mockContext, config: mockConfig });
+    await report({ github: mockGithub, context: mockContext, config: mockConfig });
 
     assert.strictEqual(listCommentsCalled, false, 'Should not retrieve comments list');
     assert.strictEqual(deleteCommentCalled, false, 'Should not delete comments');

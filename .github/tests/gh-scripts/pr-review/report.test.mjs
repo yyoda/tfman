@@ -1,11 +1,10 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert';
 import fs from 'fs';
-import path from 'path';
-import { PlanCommentBuilder } from '../../scripts/lib/comment-builder.mjs';
-import postPlanComment from '../../scripts/gh-script/pr-review-post-plan.mjs';
+import { PlanCommentBuilder } from '../../../scripts/lib/comment-builder.mjs';
+import report from '../../../scripts/gh-scripts/pr-review/report.mjs';
 
-describe('pr-review-post-plan script', () => {
+describe('report script', () => {
   let mockGithub;
   let mockContext;
   let mockCore;
@@ -54,7 +53,7 @@ describe('pr-review-post-plan script', () => {
       ]
     }));
 
-    await postPlanComment({ github: mockGithub, context: mockContext, core: mockCore, glob: mockGlob });
+    await report({ github: mockGithub, context: mockContext, core: mockCore, glob: mockGlob });
 
     assert.strictEqual(mockGithub.rest.issues.deleteComment.mock.callCount(), 1);
     assert.deepStrictEqual(mockGithub.rest.issues.deleteComment.mock.calls[0].arguments[0], {
@@ -66,7 +65,7 @@ describe('pr-review-post-plan script', () => {
 
   it('should warn if no plan files found', async () => {
     // Glob returns empty array by default in beforeEach
-    await postPlanComment({ github: mockGithub, context: mockContext, core: mockCore, glob: mockGlob });
+    await report({ github: mockGithub, context: mockContext, core: mockCore, glob: mockGlob });
     
     assert.strictEqual(mockCore.info.mock.calls.length, 1);
     assert.strictEqual(mockCore.info.mock.calls[0].arguments[0], 'No plans found to post.');
@@ -91,7 +90,7 @@ describe('pr-review-post-plan script', () => {
     });
     mock.method(fs, 'existsSync', () => true);
 
-    await postPlanComment({ github: mockGithub, context: mockContext, core: mockCore, glob: mockGlob });
+    await report({ github: mockGithub, context: mockContext, core: mockCore, glob: mockGlob });
     
     // Validate comment creation
     assert.strictEqual(mockGithub.rest.issues.createComment.mock.callCount(), 1);
@@ -116,7 +115,7 @@ describe('pr-review-post-plan script', () => {
     // plan.txt missing
     mock.method(fs, 'existsSync', (file) => !file.endsWith('plan.txt'));
 
-    await postPlanComment({ github: mockGithub, context: mockContext, core: mockCore, glob: mockGlob });
+    await report({ github: mockGithub, context: mockContext, core: mockCore, glob: mockGlob });
 
     // Should not post empty comment or fail, but in current logic if builder is empty, buildChunks returns []?
     // Let's check logic: builder.addResult is skipped -> builder.buildChunks() might return []?

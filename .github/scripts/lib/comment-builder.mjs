@@ -166,11 +166,7 @@ export class PlanCommentBuilder {
   }
 }
 
-export class ReportCommentBuilder {
-  static get COMMENT_HEADER() {
-    return '## 📋 Workflow Execution Report';
-  }
-
+export class CustomCommandCommentBuilder {
   /**
    * @param {string} command - 'plan' or 'apply'
    */
@@ -213,10 +209,8 @@ export class ReportCommentBuilder {
    * Build the markdown report
    * @returns {string} The markdown content
    */
-  build() {
-    const header = ReportCommentBuilder.COMMENT_HEADER;
-    
-    let report = `${header}\n\n`;
+  build() {    
+    let report = '';
 
     // Add custom messages
     if (this.messages.length > 0) {

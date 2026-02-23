@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { PlanCommentBuilder, ReportCommentBuilder } from '../../scripts/lib/comment-builder.mjs';
+import { PlanCommentBuilder, CustomCommandCommentBuilder } from '../../scripts/lib/comment-builder.mjs';
 
 describe('PlanCommentBuilder', () => {
 
@@ -92,16 +92,15 @@ Plan: 1 to add, 0 to change, 0 to destroy.
   });
 });
 
-describe('ReportCommentBuilder', () => {
+describe('CustomCommandCommentBuilder', () => {
   it('should generate empty warning when no data', () => {
-    const builder = new ReportCommentBuilder('apply');
+    const builder = new CustomCommandCommentBuilder('apply');
     const output = builder.build();
-    assert.ok(output.includes(ReportCommentBuilder.COMMENT_HEADER));
     assert.ok(output.includes('No execution jobs found'));
   });
 
   it('should generate message-only report', () => {
-    const builder = new ReportCommentBuilder('plan');
+    const builder = new CustomCommandCommentBuilder('plan');
     builder.addMessage('Just a message.');
     const output = builder.build();
     assert.ok(output.includes('Just a message.'));
@@ -109,7 +108,7 @@ describe('ReportCommentBuilder', () => {
   });
 
   it('should generate success report with table and link', () => {
-    const builder = new ReportCommentBuilder('apply');
+    const builder = new CustomCommandCommentBuilder('apply');
     builder.addResult('dev/app', 'success', 'http://log/1');
     builder.setWorkflowRunUrl('http://run/1');
     
@@ -121,7 +120,7 @@ describe('ReportCommentBuilder', () => {
   });
 
   it('should generate failure report', () => {
-    const builder = new ReportCommentBuilder('plan');
+    const builder = new CustomCommandCommentBuilder('plan');
     builder.addResult('prod/db', 'failure', 'http://log/2');
     
     const output = builder.build();

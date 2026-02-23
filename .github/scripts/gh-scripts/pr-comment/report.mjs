@@ -1,4 +1,4 @@
-import { ReportCommentBuilder } from '../lib/comment-builder.mjs';
+import { CustomCommandCommentBuilder } from '../../lib/comment-builder.mjs';
 
 /**
  * GitHub Actions script entry point for posting report comments.
@@ -11,10 +11,10 @@ import { ReportCommentBuilder } from '../lib/comment-builder.mjs';
  */
 export default async ({ github, context, core, config }) => {
   const { result_message, command } = config;
-  const COMMENT_HEADER = ReportCommentBuilder.COMMENT_HEADER;
+  const COMMENT_HEADER = CustomCommandCommentBuilder.COMMENT_HEADER;
   
   // 1. Initialize Builder with Preamble
-  const builder = new ReportCommentBuilder(command);
+  const builder = new CustomCommandCommentBuilder(command);
   if (result_message) {
     builder.addMessage(result_message);
   }
