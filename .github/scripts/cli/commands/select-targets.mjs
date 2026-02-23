@@ -71,7 +71,7 @@ export async function run(options) {
     const outputPath = output || join(root, '.tfmatrix.json');
 
     const matrixJson = { include: includeList };
-    await writeFile(outputPath, JSON.stringify(matrixJson, null, 2));
+    await writeFile(outputPath, JSON.stringify(matrixJson));
 
     logger.info(`Matrix JSON written to ${outputPath}`);
   } catch (error) {
