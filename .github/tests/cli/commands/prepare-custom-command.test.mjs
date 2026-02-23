@@ -1,4 +1,4 @@
-import { describe, it, mock } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { parseCommand, run } from '../../../scripts/cli/commands/prepare-custom-command.mjs';
 
@@ -10,8 +10,8 @@ describe('cli/commands/prepare-custom-command', () => {
       assert.strictEqual(parseCommand(''), null);
     });
 
-    it('should return null for non-apply commands', () => {
-      assert.strictEqual(parseCommand('/plan'), null);
+    it('should return null for invalid commands', () => {
+      assert.strictEqual(parseCommand('/invalid'), null);
       assert.strictEqual(parseCommand('hello world'), null);
     });
 
@@ -21,34 +21,28 @@ describe('cli/commands/prepare-custom-command', () => {
       assert.deepStrictEqual(result.targets, []);
     });
 
+    it('should parse basic /plan command', () => {
+      const result = parseCommand('/plan');
+      assert.strictEqual(result.command, 'plan');
+      assert.deepStrictEqual(result.targets, []);
+    });
+
+    it('should parse /help command', () => {
+      const result = parseCommand('/help');
+      assert.strictEqual(result.command, 'help');
+      assert.ok(result.message.includes('Usage'));
+    });
+
     it('should parse /apply with targets', () => {
       const result = parseCommand('/apply dev/frontend prod/backend');
       assert.strictEqual(result.command, 'apply');
       assert.deepStrictEqual(result.targets, ['dev/frontend', 'prod/backend']);
     });
 
-    it('should parse dry-run flag', () => {
-      const result = parseCommand('/apply --dry-run');
-      assert.strictEqual(result.command, 'plan');
-      assert.deepStrictEqual(result.targets, []);
-    });
-
-    it('should parse dry-run flag with targets', () => {
-      const result = parseCommand('/apply dev/db --dry-run');
-      assert.strictEqual(result.command, 'plan');
-      assert.deepStrictEqual(result.targets, ['dev/db']);
-    });
-
-    it('should return help command', () => {
-      const result = parseCommand('/apply --help');
-      assert.strictEqual(result.command, 'help');
-      assert.ok(result.helpMsg);
-    });
-
-    it('should ignore quotes in args', () => {
-      const result = parseCommand('/apply "dev/foo" \'prod/bar\'');
+    it('should ignore quotes and split args correctly', () => {
+      const result = parseCommand('/apply "dev/foo bar" \'prod/baz\'');
       assert.strictEqual(result.command, 'apply');
-      assert.deepStrictEqual(result.targets, ['dev/foo', 'prod/bar']);
+      assert.deepStrictEqual(result.targets, ['dev/foo bar', 'prod/baz']);
     });
   });
 
@@ -73,13 +67,13 @@ describe('cli/commands/prepare-custom-command', () => {
 
       assert.deepStrictEqual(detectedDetails, { base: 'base', head: 'head' });
       assert.strictEqual(result.command, 'apply');
-      assert.deepStrictEqual(result.matrix.include, [{ path: 'auto/detected' }]);
+      assert.deepStrictEqual(result.targets, [{ path: 'auto/detected' }]);
     });
 
     it('should call selectTargets when targets are provided', async () => {
-      let selectedTargets = null;
-      const _selectTargets = async ({ targets }) => {
-        selectedTargets = targets;
+      let selectedTargetsArgs = null;
+      const _selectTargets = async (args) => {
+        selectedTargetsArgs = args;
         return [{ path: 'manual/target' }];
       };
       
@@ -88,43 +82,52 @@ describe('cli/commands/prepare-custom-command', () => {
         { _selectTargets }
       );
 
-      assert.strictEqual(selectedTargets, 'dev/app');
+      assert.deepStrictEqual(selectedTargetsArgs, { targets: 'dev/app' });
       assert.strictEqual(result.command, 'apply');
-      assert.deepStrictEqual(result.matrix.include, [{ path: 'manual/target' }]);
+      assert.deepStrictEqual(result.targets, [{ path: 'manual/target' }]);
     });
 
-    it('should handle dry-run (plan)', async () => {
-      const _detectChanges = async () => [{ path: 'foo' }];
-      
+    it('should return skipped when parsing fails', async () => {
       const result = await run(
-        { ...baseArgs, commentBody: '/apply --dry-run' },
-        { _detectChanges }
+        { ...baseArgs, commentBody: '/invalid' },
+        {}
       );
 
-      assert.strictEqual(result.command, 'plan');
-      assert.ok(result.result_message.includes('Planning'));
+      assert.strictEqual(result.command, 'skipped');
+      assert.ok(result.message.includes('Not a valid command'));
     });
 
-    it('should handle no matching directories', async () => {
+    it('should return skipped when detectChanges finds nothing', async () => {
       const _detectChanges = async () => [];
 
       const result = await run(
         { ...baseArgs },
         { _detectChanges }
       );
-
-      assert.strictEqual(result.command, 'noop');
-      assert.ok(result.result_message.includes('No Terraform directories'));
+      
+      assert.strictEqual(result.command, 'skipped');
+      assert.ok(result.message.includes('No Terraform directories matched'));
     });
 
-    it('should handle help command', async () => {
+    it('should return help message', async () => {
       const result = await run(
-        { ...baseArgs, commentBody: '/apply --help' },
+        { ...baseArgs, commentBody: '/help' },
         {}
       );
 
       assert.strictEqual(result.command, 'help');
-      assert.ok(result.result_message.includes('Usage'));
+      assert.ok(result.message.includes('Usage'));
+    });
+
+    it('should return skipped on error', async () => {
+      const _detectChanges = async () => { throw new Error('Boom'); };
+
+      const result = await run(
+        { ...baseArgs },
+        { _detectChanges }
+      );
+
+      assert.strictEqual(result.command, 'skipped');
     });
   });
 });

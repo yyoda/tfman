@@ -1,16 +1,32 @@
 import { run as runDetectChanges } from './detect-changes.mjs';
 import { run as runSelectTargets } from './select-targets.mjs';
 
+function getHelpMessage() {
+  return `
+### :robot: Terraform Apply Bot Usage
+
+- \`/apply [targets...]\`: Run \`terraform apply\`
+- \`/plan [targets...]\`: Run \`terraform plan\`
+- \`/help\`: Show this help message.
+
+**Targets:**
+- List of directories to apply changes to.
+- If **no targets** are provided, the bot detects changes based on the PR diff.
+
+**Examples:**
+- \`/apply\`: Apply all changes in the PR.
+- \`/plan dev/frontend\`: Plan changes in \`dev/frontend\`.
+- \`/apply dev/backend dev/db\`: Apply for multiple paths.
+`.trim();
+}
+
 export function parseCommand(commentBody) {
   if (!commentBody) return null;
 
   const trimmed = commentBody.trim();
   const firstLine = trimmed.split(/\r?\n/)[0];
 
-  if (!firstLine.startsWith('/apply')) {
-    return null;
-  }
-
+  // Regex to capture arguments, handling quotes
   const regex = /"([^"]+)"|'([^']+)'|([^\s]+)/g;
   const args = [];
   let match;
@@ -19,49 +35,32 @@ export function parseCommand(commentBody) {
     args.push(match[1] || match[2] || match[3]);
   }
 
-  const targets = [];
-  let dryRun = false;
+  if (args.length === 0) return null;
 
-  for (let i = 1; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === '-h' || arg === '--help') {
-      return {
-        command: 'help',
-        helpMsg: getHelpMessage(),
-      };
-    }
-    if (arg === '--dry-run') {
-      dryRun = true;
-    } else {
-      targets.push(arg);
-    }
+  const cmdToken = args[0];
+  let command = null;
+
+  if (cmdToken === '/apply') {
+    command = 'apply';
+  } else if (cmdToken === '/plan') {
+    command = 'plan';
+  } else if (cmdToken === '/help') {
+    return {
+      command: 'help',
+      targets: [],
+      message: getHelpMessage(),
+    };
+  } else {
+    return null;
   }
 
-  return {
-    command: dryRun ? 'plan' : 'apply',
-    targets,
-  };
-}
+  const targets = [];
+  for (let i = 1; i < args.length; i++) {
+    const arg = args[i];
+    targets.push(arg);
+  }
 
-function getHelpMessage() {
-  return `
-### :robot: Terraform Apply Bot Usage
-
-\`/apply [targets...] [options]\`
-
-**Options:**
-- \`--dry-run\`: Run \`terraform plan\` instead of \`terraform apply\`.
-- \`-h\`, \`--help\`: Show this help message.
-
-**Targets:**
-- List of directories to apply changes to.
-- If **no targets** are provided, the bot detects changes based on the PR diff.
-
-**Examples:**
-- \`/apply\`: Apply all changes in the PR.
-- \`/apply dev/frontend\`: Apply changes in \`dev/frontend\` only.
-- \`/apply --dry-run\`: Plan all changes in the PR.
-`.trim();
+  return { command, targets };
 }
 
 export async function run({ commentBody, baseSha, headSha }, dependencies = {}) {
@@ -72,14 +71,19 @@ export async function run({ commentBody, baseSha, headSha }, dependencies = {}) 
 
   const parsed = parseCommand(commentBody);
   if (!parsed) {
-    return null;
+    return {
+      command: 'skipped',
+      targets: [],
+      message: 'Not a valid command.',
+    };
   }
 
   if (parsed.command === 'help') {
-    return {
-      command: 'help',
-      result_message: parsed.helpMsg,
-    };
+     return {
+       command: 'help',
+       targets: [],
+       message: parsed.message
+     };
   }
 
   const { command, targets } = parsed;
@@ -94,26 +98,23 @@ export async function run({ commentBody, baseSha, headSha }, dependencies = {}) 
 
     if (matrixParams.length === 0) {
       return {
-        command: 'noop',
-        result_message: 'No Terraform directories matched the criteria.',
+        command: 'skipped',
+        targets: [],
+        message: 'No Terraform directories matched the criteria.',
       };
     }
 
-    const targetCount = matrixParams.length;
-    const action = command === 'plan' ? 'Planning' : 'Applying';
-    const message = `### ${action} ${targetCount} targets\n\n` + 
-                    matrixParams.map(m => `- \`${m.path}\``).join('\n');
-
     return {
-      command: command,
-      matrix: { include: matrixParams },
-      result_message: message,
+      command,
+      targets: matrixParams,
+      message: '',
     };
 
   } catch (error) {
     return {
-      command: 'error',
-      result_message: `### Error Processing Request\n\n${error.message}`,
+      command: 'skipped',
+      targets: [],
+      message: error.message,
     };
   }
 }

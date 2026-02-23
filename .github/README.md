@@ -27,13 +27,15 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 
 ### PRComment
 - **PURPOSE**:
-    - Triggers `terraform apply` for changes when an arbitrary message is posted to a PR comment.
+    - Triggers `terraform apply` or `terraform plan` for changes when an arbitrary message is posted to a PR comment.
 - **MESSAGE COMMANDS**:
-    - **`/apply`**
-        - Executes `terraform apply` for all directories where changes were detected in the PR.
-        - This is the most common usage.
-    - **`/apply --dry-run`**
-        - Executes plan instead of apply.
+    - **`/apply [targets...]`**
+        - Executes `terraform apply`.
+        - If targets are omitted, applies all detected changes.
+        - Example: `/apply`, `/apply dev/frontend dev/backend`
+    - **`/plan [targets...]`**
+        - Executes `terraform plan`.
+        - Example: `/plan`, `/plan dev/frontend`
 - **CONDITIONS**:
 - **Execution User Restriction**: The comment poster must be included in `TF_APPLY_USERS`. If not defined, the workflow is skipped.
 
