@@ -75,7 +75,7 @@ jobs:
             --comment-body "$COMMENT_BODY" \
             --base-sha "$BASE_SHA" \
             --head-sha "$HEAD_SHA")
-          cat $RESULT | jq
+          echo "$RESULT" | jq
           MATRIX=$(echo "$RESULT" | jq '.matrix // empty')
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
           COMMAND=$(echo "$RESULT" | jq '.command')
