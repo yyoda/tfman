@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import { deepStrictEqual } from 'node:assert';
-import { calculateExecutionPaths } from '../../scripts/lib/ops/change-detector.mjs';
+import { calculateExecutionPaths } from '../../../scripts/lib/ops/change-detector.mjs';
 
 describe('detect-changes', () => {
     const depsData = {

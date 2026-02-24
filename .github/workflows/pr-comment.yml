@@ -71,7 +71,7 @@ jobs:
           BASE_SHA: ${{ steps.pr-details.outputs.base_sha }}
           HEAD_SHA: ${{ steps.pr-details.outputs.head_sha }}
         run: |
-          RESULT=$(node .github/scripts/cli/index.mjs prepare-custom-command \
+          RESULT=$(node .github/scripts/cli/index.mjs operate-command \
             --comment-body "$COMMENT_BODY" \
             --base-sha "$BASE_SHA" \
             --head-sha "$HEAD_SHA")

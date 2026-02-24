@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import { run as runDetectChanges } from './commands/detect-changes.mjs';
 import { run as runSelectTargets } from './commands/select-targets.mjs';
 import { run as runGenerateDeps } from './commands/generate-deps.mjs';
-import { run as runPrepareCustomCommand } from './commands/parse-command.mjs';
+import { run as runOperateCommand } from './commands/operate-command.mjs';
 
 const args = process.argv.slice(2);
 if (args.length === 0) {
@@ -53,7 +53,7 @@ async function main() {
         await runGenerateDeps(values);
         break;
       }
-      case 'prepare-custom-command': {
+      case 'operate-command': {
         const { values } = parseArgs({
           args: commandArgs,
           options: {
@@ -62,7 +62,7 @@ async function main() {
             'head-sha': { type: 'string' }
           }
         });
-        const result = await runPrepareCustomCommand({
+        const result = await runOperateCommand({
           commentBody: values['comment-body'],
           baseSha: values['base-sha'],
           headSha: values['head-sha']

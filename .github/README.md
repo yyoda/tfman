@@ -156,13 +156,13 @@ node .github/scripts/cli/index.mjs select-targets --targets "dir1 dir2" [--outpu
 - `--targets`: Space-separated list of target directories.
 - `--output`: Path to the output JSON file (Default: `.tfmatrix.json` in workspace root).
 
-#### 4. `prepare-custom-command`
+#### 4. `operate-command`
 
 Parses a PR command comment (e.g., `/apply app/dev`) and prepares the execution context.
 
 **Usage:**
 ```bash
-node .github/scripts/cli/index.mjs prepare-custom-command \
+node .github/scripts/cli/index.mjs operate-command \
   --comment-body "<body>" \
   --base-sha <sha> \
   --head-sha <sha>
