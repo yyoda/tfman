@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import { deepStrictEqual } from 'node:assert';
-import { resolveTargets } from '../../../scripts/cli/commands/select-targets.mjs';
+import { resolveTargets } from '../../scripts/lib/ops/target-selector.mjs';
 
 describe('select-targets', () => {
     const depsData = {

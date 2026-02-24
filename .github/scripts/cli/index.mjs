@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import { run as runDetectChanges } from './commands/detect-changes.mjs';
 import { run as runSelectTargets } from './commands/select-targets.mjs';
 import { run as runGenerateDeps } from './commands/generate-deps.mjs';
-import { run as runPrepareCustomCommand } from './commands/prepare-custom-command.mjs';
+import { run as runPrepareCustomCommand } from './commands/parse-command.mjs';
 
 const args = process.argv.slice(2);
 if (args.length === 0) {

@@ -1,7 +1,20 @@
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, access } from 'node:fs/promises';
+import { constants } from 'node:fs';
 
-
+/**
+ * Checks if a file or directory exists.
+ * @param {string} path - The path to check.
+ * @returns {Promise<boolean>} - True if the path exists, false otherwise.
+ */
+export async function exists(path) {
+  try {
+    await access(path, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function runCommand(command, options = {}) {
   return new Promise((resolve, reject) => {
