@@ -1,6 +1,74 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { PlanCommentBuilder, CustomCommandCommentBuilder } from '../../scripts/lib/comment-builder.mjs';
+import { PlanCommentBuilder, ApplyCommentBuilder } from '../../scripts/lib/comment-builder.mjs';
+
+describe('ApplyCommentBuilder', () => {
+    it('should generate empty string when no results', () => {
+        const builder = new ApplyCommentBuilder();
+        assert.strictEqual(builder.build(), '');
+    });
+
+    it('should parse successful apply output correctly', () => {
+        const builder = new ApplyCommentBuilder();
+        const output = `
+aws_s3_bucket.example: Creating...
+aws_s3_bucket.example: Creation complete after 3s [id=example-bucket]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+        `;
+        builder.addResult('dev/s3', output, 'success');
+
+        const comment = builder.build();
+        
+        assert.ok(comment.includes('## 🚀 Terraform Apply Result'));
+        assert.ok(comment.includes('| `dev/s3` | ✅ | +1 |'));
+        assert.ok(comment.includes('<details><summary><strong>Show Output Details</strong></summary>'));
+        assert.ok(comment.includes('aws_s3_bucket.example: Creating...'));
+    });
+
+    it('should parse apply with changes correctly', () => {
+        const builder = new ApplyCommentBuilder();
+        const output = 'Apply complete! Resources: 2 added, 1 changed, 3 destroyed.';
+        builder.addResult('prod/app', output, 'success');
+
+        const comment = builder.build();
+        assert.ok(comment.includes('| `prod/app` | ✅ | +2, ~1, -3 |'));
+    });
+
+    it('should handle failed apply output', () => {
+        const builder = new ApplyCommentBuilder();
+        const output = `
+Error: infrastructure not found
+
+Apply failed.
+        `;
+        builder.addResult('stage/db', output, 'failure');
+
+        const comment = builder.build();
+        assert.ok(comment.includes('| `stage/db` | ❌ | **Error** |'));
+        assert.ok(comment.includes('Error: infrastructure not found'));
+    });
+
+    it('should handle output without standard stats line', () => {
+        const builder = new ApplyCommentBuilder();
+        const output = 'Something unexpected happened.';
+        builder.addResult('unknown/path', output, 'failure');
+
+        const comment = builder.build();
+        assert.ok(comment.includes('| `unknown/path` | ❌ | - |'));
+    });
+
+    it('should escape backticks in output', () => {
+        const builder = new ApplyCommentBuilder();
+        const output = 'Output contains ``` code block ```';
+        builder.addResult('security/test', output, 'success');
+
+        const comment = builder.build();
+        // Should replace ``` with '''
+        assert.ok(comment.includes("''' code block '''"));
+        assert.ok(!comment.includes('``` code block ```'));
+    });
+});
 
 describe('PlanCommentBuilder', () => {
 
@@ -89,42 +157,5 @@ Plan: 1 to add, 0 to change, 0 to destroy.
     const builder = new PlanCommentBuilder();
     const chunks = builder.buildChunks();
     assert.strictEqual(chunks.length, 0);
-  });
-});
-
-describe('CustomCommandCommentBuilder', () => {
-  it('should generate empty warning when no data', () => {
-    const builder = new CustomCommandCommentBuilder('apply');
-    const output = builder.build();
-    assert.ok(output.includes('No execution jobs found'));
-  });
-
-  it('should generate message-only report', () => {
-    const builder = new CustomCommandCommentBuilder('plan');
-    builder.addMessage('Just a message.');
-    const output = builder.build();
-    assert.ok(output.includes('Just a message.'));
-    assert.ok(!output.includes('| Target |'), 'Should not have table');
-  });
-
-  it('should generate success report with table and link', () => {
-    const builder = new CustomCommandCommentBuilder('apply');
-    builder.addResult('dev/app', 'success', 'http://log/1');
-    builder.setWorkflowRunUrl('http://run/1');
-    
-    const output = builder.build();
-    
-    assert.ok(output.includes('### ✅ Apply Succeeded'));
-    assert.ok(output.includes('| `dev/app` | ✅ | [Log](http://log/1) |'));
-    assert.ok(output.includes('[View Workflow Run](http://run/1)'));
-  });
-
-  it('should generate failure report', () => {
-    const builder = new CustomCommandCommentBuilder('plan');
-    builder.addResult('prod/db', 'failure', 'http://log/2');
-    
-    const output = builder.build();
-    assert.ok(output.includes('### ❌ Plan Failed'));
-    assert.ok(output.includes('| `prod/db` | ❌ |'));
   });
 });

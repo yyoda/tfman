@@ -166,99 +166,92 @@ export class PlanCommentBuilder {
   }
 }
 
-export class CustomCommandCommentBuilder {
-  /**
-   * @param {string} command - 'plan' or 'apply'
-   */
-  constructor(command) {
-    this.command = command || 'unknown';
+
+
+export class ApplyCommentBuilder {
+  static get COMMENT_HEADER() {
+    return '## 🚀 Terraform Apply Result';
+  }
+
+  constructor() {
     this.results = [];
-    this.messages = [];
-    this.workflowRunUrl = '';
   }
 
   /**
-   * Add a job result
-   * @param {string} target - The target name (e.g. 'dev/base')
-   * @param {string} conclusion - The job conclusion (e.g. 'success', 'failure')
-   * @param {string} url - The URL to the job logs
+   * Add an apply result
+   * @param {string} tfPath 
+   * @param {string} output 
+   * @param {string} outcome - 'success' or 'failure'
    */
-  addResult(target, conclusion, url) {
-    this.results.push({ target, conclusion, url });
+  addResult(tfPath, output, outcome) {
+    this.results.push({
+      tfPath,
+      output,
+      outcome
+    });
   }
 
   /**
-   * Add a custom message to the report
-   * @param {string} message 
+   * Build the comment body
+   * @returns {string}
    */
-  addMessage(message) {
-    if (message) {
-      this.messages.push(message);
-    }
-  }
+  build() {
+    if (this.results.length === 0) return '';
 
-  /**
-   * Set the workflow run URL for the footer
-   * @param {string} url 
-   */
-  setWorkflowRunUrl(url) {
-    this.workflowRunUrl = url;
-  }
+    // Sort by path
+    this.results.sort((a, b) => a.tfPath.localeCompare(b.tfPath));
 
-  /**
-   * Build the markdown report
-   * @returns {string} The markdown content
-   */
-  build() {    
-    let report = '';
-
-    // Add custom messages
-    if (this.messages.length > 0) {
-      report += `${this.messages.join('\n\n')}\n\n`;
-    }
-
-    // If no results, handle "No execution jobs" case
-    if (this.results.length === 0) {
-      if (this.messages.length === 0) {
-         report += "No execution jobs found. (Maybe filtered or skipped?)";
-      }
-      return report.trim();
-    }
-
-    // Determine overall status
-    const allSuccess = this.results.every(r => r.conclusion === 'success');
-    const statusIcon = allSuccess ? '✅' : '❌';
-    
-    let statusSummary = '';
-    if (this.command === 'plan') {
-      statusSummary = allSuccess ? 'Plan Completed' : 'Plan Failed';
-    } else {
-      statusSummary = allSuccess ? 'Apply Succeeded' : 'Apply Failed';
-    }
-    
-    const statusLine = `### ${statusIcon} ${statusSummary}`;
-
-    report += `${statusLine}\n\n| Target | Status | Link |\n| :--- | :---: | :--- |\n`;
-
-    // Sort by target
-    this.results.sort((a, b) => a.target.localeCompare(b.target));
+    let comment = `${ApplyCommentBuilder.COMMENT_HEADER}\n\n`;
+    comment += '| Path | Outcome | Changes |\n| :--- | :---: | :--- |\n';
 
     for (const res of this.results) {
-      let icon = '❓';
-      if (res.conclusion === 'success') icon = '✅';
-      else if (res.conclusion === 'failure') icon = '❌';
-      else if (res.conclusion === 'cancelled') icon = '🚫';
-      else if (res.conclusion === 'skipped') icon = '⏭️';
-
-      const link = res.url ? `[Log](${res.url})` : '-';
-      report += `| \`${res.target}\` | ${icon} | ${link} |\n`;
+      const { tfPath, output, outcome } = res;
+      const stats = this._parseStats(output);
+      const icon = outcome === 'success' ? '✅' : '❌';
+      
+      comment += `| \`${tfPath}\` | ${icon} | ${stats} |\n`;
     }
 
-    // Add footer
-    if (this.workflowRunUrl) {
-      report += `\n[View Workflow Run](${this.workflowRunUrl})`;
+    comment += '\n<details><summary><strong>Show Output Details</strong></summary>\n\n';
+    
+    for (const res of this.results) {
+      const { tfPath, output } = res;
+      // Sanitize output to avoid breaking markdown code blocks
+      const safeOutput = output.replace(/```/g, "'''");
+      
+      comment += `### 📂 \`${tfPath}\`\n\n\`\`\`text\n${safeOutput}\n\`\`\`\n\n`;
+    }
+    
+    comment += '</details>';
+
+    return comment;
+  }
+
+  /**
+   * Parse apply output to find resource changes
+   * @param {string} output 
+   * @returns {string}
+   */
+  _parseStats(output) {
+    // Look for: "Apply complete! Resources: 1 added, 0 changed, 1 destroyed."
+    const match = output.match(/Resources: (\d+) added, (\d+) changed, (\d+) destroyed/);
+    if (match) {
+      const added = parseInt(match[1], 10);
+      const changed = parseInt(match[2], 10);
+      const destroyed = parseInt(match[3], 10);
+
+      const parts = [];
+      if (added > 0) parts.push(`+${added}`);
+      if (changed > 0) parts.push(`~${changed}`);
+      if (destroyed > 0) parts.push(`-${destroyed}`);
+      
+      // If there are counts but they are all 0, it means no changes were made.
+      if (parts.length === 0) return 'No changes';
+      return parts.join(', ');
     }
 
-    return report;
+    if (output.includes('Error:')) return '**Error**';
+    
+    return '-';
   }
 }

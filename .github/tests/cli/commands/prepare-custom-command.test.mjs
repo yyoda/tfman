@@ -87,17 +87,17 @@ describe('cli/commands/prepare-custom-command', () => {
       assert.deepStrictEqual(result.targets, [{ path: 'manual/target' }]);
     });
 
-    it('should return skipped when parsing fails', async () => {
+    it('should return error when parsing fails', async () => {
       const result = await run(
         { ...baseArgs, commentBody: '/invalid' },
         {}
       );
 
-      assert.strictEqual(result.command, 'skipped');
+      assert.strictEqual(result.command, 'error');
       assert.ok(result.message.includes('Not a valid command'));
     });
 
-    it('should return skipped when detectChanges finds nothing', async () => {
+    it('should return error when detectChanges finds nothing', async () => {
       const _detectChanges = async () => [];
 
       const result = await run(
@@ -105,7 +105,7 @@ describe('cli/commands/prepare-custom-command', () => {
         { _detectChanges }
       );
       
-      assert.strictEqual(result.command, 'skipped');
+      assert.strictEqual(result.command, 'error');
       assert.ok(result.message.includes('No Terraform directories matched'));
     });
 
@@ -119,7 +119,7 @@ describe('cli/commands/prepare-custom-command', () => {
       assert.ok(result.message.includes('Usage'));
     });
 
-    it('should return skipped on error', async () => {
+    it('should return error on exception', async () => {
       const _detectChanges = async () => { throw new Error('Boom'); };
 
       const result = await run(
@@ -127,7 +127,7 @@ describe('cli/commands/prepare-custom-command', () => {
         { _detectChanges }
       );
 
-      assert.strictEqual(result.command, 'skipped');
+      assert.strictEqual(result.command, 'error');
     });
   });
 });

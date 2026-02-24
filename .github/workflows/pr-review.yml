@@ -122,30 +122,21 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
-          # 1. Generate plan binary (detailed output is suppressed when using -out)
-          #    We don't use -no-color here to allow color in the subsequent 'show' command.
-          terraform plan -refresh=false -out=tfplan
-
-          # 2. Display plan in CI logs WITH colors for human readability
+          # Generate plan binary
+          terraform plan -input=false -out=tfplan
+          # Display with colors in logs
           terraform show tfplan
-
-          # 3. Save plan to text file WITHOUT color codes for PR comment automation
-          #    (The report script expects plain text without ANSI codes)
+          # Save plan to text for comment
           terraform show -no-color tfplan > plan.txt
-        env:
-          TF_INPUT: false
 
-      - name: Create Plan Artifact Metadata
+      - name: Create Artifact Metadata
         id: meta
         run: |
-          # Sanitize path for artifact name
           CLEAN_PATH=$(echo "${{ matrix.path }}" | tr '/' '-')
           echo "clean_path=${CLEAN_PATH}" >> $GITHUB_OUTPUT
-          
-          # Save path info for aggregation
           echo "{\"path\": \"${{ matrix.path }}\"}" > info.json
 
-      - name: Upload Plan Artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: plan-${{ steps.meta.outputs.clean_path }}
@@ -174,6 +165,5 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const { default: script } = await import('${{ github.workspace }}/.github/scripts/gh-scripts/pr-review/post-plan.mjs');
-            await script({github, context, core, glob});
-
+            const { default: script } = await import('${{ github.workspace }}/.github/scripts/gh-scripts/post-comment.mjs');
+            await script({github, context, core, glob}, { mode: 'plan', deletePreviousComments: true });

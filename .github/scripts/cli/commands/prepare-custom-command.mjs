@@ -72,7 +72,7 @@ export async function run({ commentBody, baseSha, headSha }, dependencies = {}) 
   const parsed = parseCommand(commentBody);
   if (!parsed) {
     return {
-      command: 'skipped',
+      command: 'error',
       targets: [],
       message: 'Not a valid command.',
     };
@@ -80,7 +80,7 @@ export async function run({ commentBody, baseSha, headSha }, dependencies = {}) 
 
   if (parsed.command === 'help') {
      return {
-       command: 'help',
+       command: parsed.command,
        targets: [],
        message: parsed.message
      };
@@ -98,7 +98,7 @@ export async function run({ commentBody, baseSha, headSha }, dependencies = {}) 
 
     if (matrixParams.length === 0) {
       return {
-        command: 'skipped',
+        command: 'error',
         targets: [],
         message: 'No Terraform directories matched the criteria.',
       };
@@ -112,7 +112,7 @@ export async function run({ commentBody, baseSha, headSha }, dependencies = {}) 
 
   } catch (error) {
     return {
-      command: 'skipped',
+      command: 'error',
       targets: [],
       message: error.message,
     };
