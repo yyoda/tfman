@@ -76,11 +76,11 @@ jobs:
             --base-sha "$BASE_SHA" \
             --head-sha "$HEAD_SHA")
           echo "$RESULT" | jq
-          MATRIX=$(echo "$RESULT" | jq '.matrix // empty')
+          MATRIX=$(echo "$RESULT" | jq -c '.matrix // empty')
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-          COMMAND=$(echo "$RESULT" | jq '.command')
+          COMMAND=$(echo "$RESULT" | jq -r '.command')
           echo "command=$COMMAND" >> $GITHUB_OUTPUT
-          MESSAGE=$(echo "$RESULT" | jq '.message')
+          MESSAGE=$(echo "$RESULT" | jq -r '.message')
           echo "message=$MESSAGE" >> $GITHUB_OUTPUT
 
       - name: Post Help Comment
