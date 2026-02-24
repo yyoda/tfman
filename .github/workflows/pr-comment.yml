@@ -238,7 +238,7 @@ jobs:
 
   post-run:
     needs: [setup, run]
-    if: !cancelled()
+    if: "!cancelled()"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
