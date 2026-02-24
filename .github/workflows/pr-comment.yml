@@ -20,10 +20,10 @@ env:
 jobs:
   setup:
     if: >-
-      github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '$terraform')
-      # vars.TF_APPLY_USERS != '' &&
-      # contains(fromJson(vars.TF_APPLY_USERS), github.event.comment.user.login)
+      # github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '$terraform') &&
+      vars.TF_APPLY_USERS != '' &&
+      contains(fromJson(vars.TF_APPLY_USERS), github.event.comment.user.login)
     runs-on: ubuntu-latest
     outputs:
       command: ${{ steps.set-matrix.outputs.command }}
