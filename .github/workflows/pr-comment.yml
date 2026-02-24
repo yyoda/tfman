@@ -19,11 +19,12 @@ env:
 
 jobs:
   setup:
-    if: >-
-      # github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '$terraform')
-      # vars.TF_APPLY_USERS != '' &&
-      # contains(fromJson(vars.TF_APPLY_USERS), github.event.comment.user.login)
+    if: true
+    # if: >-
+    #   github.event.issue.pull_request &&
+    #   startsWith(github.event.comment.body, '$terraform') &&
+    #   vars.TF_APPLY_USERS != '' &&
+    #   contains(fromJson(vars.TF_APPLY_USERS), github.event.comment.user.login)
     runs-on: ubuntu-latest
     outputs:
       command: ${{ steps.set-matrix.outputs.command }}
@@ -31,6 +32,22 @@ jobs:
       ref: ${{ steps.pr-details.outputs.ref }}
       head_sha: ${{ steps.pr-details.outputs.head_sha }}
     steps:
+      - name: Debug Context
+        run: |
+          echo "Debug Info:"
+          echo "  Event Name: ${{ github.event_name }}"
+          echo "  Is PR: ${{ github.event.issue.pull_request != null }}"
+          echo "  Comment Body: '${{ github.event.comment.body }}'"
+          echo "  User Login: ${{ github.event.comment.user.login }}"
+          echo "  TF_APPLY_USERS (raw): '${{ vars.TF_APPLY_USERS }}'"
+          
+          # StartsWith Check
+          if [[ "${{ startsWith(github.event.comment.body, '$terraform') }}" == "true" ]]; then
+            echo "  Check: Body starts with '$terraform' -> PASS"
+          else
+            echo "  Check: Body starts with '$terraform' -> FAIL"
+          fi
+
       - name: Add reaction
         uses: actions/github-script@v7
         with:
