@@ -13,34 +13,35 @@ describe('cli/commands/prepare-custom-command', () => {
     it('should return null for invalid commands', () => {
       assert.strictEqual(parseCommand('/invalid'), null);
       assert.strictEqual(parseCommand('hello world'), null);
+      assert.strictEqual(parseCommand('$terraform invalid'), null);
     });
 
-    it('should parse basic /apply command', () => {
-      const result = parseCommand('/apply');
+    it('should parse basic $terraform apply command', () => {
+      const result = parseCommand('$terraform apply');
       assert.strictEqual(result.command, 'apply');
       assert.deepStrictEqual(result.targets, []);
     });
 
-    it('should parse basic /plan command', () => {
-      const result = parseCommand('/plan');
+    it('should parse basic $terraform plan command', () => {
+      const result = parseCommand('$terraform plan');
       assert.strictEqual(result.command, 'plan');
       assert.deepStrictEqual(result.targets, []);
     });
 
-    it('should parse /help command', () => {
-      const result = parseCommand('/help');
+    it('should parse $terraform help command', () => {
+      const result = parseCommand('$terraform help');
       assert.strictEqual(result.command, 'help');
       assert.ok(result.message.includes('Usage'));
     });
 
-    it('should parse /apply with targets', () => {
-      const result = parseCommand('/apply dev/frontend prod/backend');
+    it('should parse $terraform apply with targets', () => {
+      const result = parseCommand('$terraform apply dev/frontend prod/backend');
       assert.strictEqual(result.command, 'apply');
       assert.deepStrictEqual(result.targets, ['dev/frontend', 'prod/backend']);
     });
 
     it('should ignore quotes and split args correctly', () => {
-      const result = parseCommand('/apply "dev/foo bar" \'prod/baz\'');
+      const result = parseCommand('$terraform apply "dev/foo bar" \'prod/baz\'');
       assert.strictEqual(result.command, 'apply');
       assert.deepStrictEqual(result.targets, ['dev/foo bar', 'prod/baz']);
     });
@@ -48,7 +49,7 @@ describe('cli/commands/prepare-custom-command', () => {
 
   describe('run', () => {
     const baseArgs = {
-      commentBody: '/apply',
+      commentBody: '$terraform apply',
       baseSha: 'base',
       headSha: 'head',
     };
@@ -78,7 +79,7 @@ describe('cli/commands/prepare-custom-command', () => {
       };
       
       const result = await run(
-        { ...baseArgs, commentBody: '/apply dev/app' },
+        { ...baseArgs, commentBody: '$terraform apply dev/app' },
         { _selectTargets }
       );
 
@@ -89,7 +90,7 @@ describe('cli/commands/prepare-custom-command', () => {
 
     it('should return error when parsing fails', async () => {
       const result = await run(
-        { ...baseArgs, commentBody: '/invalid' },
+        { ...baseArgs, commentBody: '$terraform invalid' },
         {}
       );
 
@@ -111,7 +112,7 @@ describe('cli/commands/prepare-custom-command', () => {
 
     it('should return help message', async () => {
       const result = await run(
-        { ...baseArgs, commentBody: '/help' },
+        { ...baseArgs, commentBody: '$terraform help' },
         {}
       );
 

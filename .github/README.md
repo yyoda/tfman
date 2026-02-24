@@ -29,13 +29,13 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 - **PURPOSE**:
     - Triggers `terraform apply` or `terraform plan` for changes when an arbitrary message is posted to a PR comment.
 - **MESSAGE COMMANDS**:
-    - **`/apply [targets...]`**
+    - **`$terraform apply [targets...]`**
         - Executes `terraform apply`.
         - If targets are omitted, applies all detected changes.
-        - Example: `/apply`, `/apply dev/frontend dev/backend`
-    - **`/plan [targets...]`**
+        - Example: `$terraform apply`, `$terraform apply dev/frontend dev/backend`
+    - **`$terraform plan [targets...]`**
         - Executes `terraform plan`.
-        - Example: `/plan`, `/plan dev/frontend`
+        - Example: `$terraform plan`, `$terraform plan dev/frontend`
 - **CONDITIONS**:
 - **Execution User Restriction**: The comment poster must be included in `TF_APPLY_USERS`. If not defined, the workflow is skipped.
 

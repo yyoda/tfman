@@ -5,18 +5,18 @@ function getHelpMessage() {
   return `
 ### :robot: Terraform Apply Bot Usage
 
-- \`/apply [targets...]\`: Run \`terraform apply\`
-- \`/plan [targets...]\`: Run \`terraform plan\`
-- \`/help\`: Show this help message.
+- \`$terraform apply [targets...]\`: Run \`terraform apply\`
+- \`$terraform plan [targets...]\`: Run \`terraform plan\`
+- \`$terraform help\`: Show this help message.
 
 **Targets:**
 - List of directories to apply changes to.
 - If **no targets** are provided, the bot detects changes based on the PR diff.
 
 **Examples:**
-- \`/apply\`: Apply all changes in the PR.
-- \`/plan dev/frontend\`: Plan changes in \`dev/frontend\`.
-- \`/apply dev/backend dev/db\`: Apply for multiple paths.
+- \`$terraform apply\`: Apply all changes in the PR.
+- \`$terraform plan dev/frontend\`: Plan changes in \`dev/frontend\`.
+- \`$terraform apply dev/backend dev/db\`: Apply for multiple paths.
 `.trim();
 }
 
@@ -35,16 +35,16 @@ export function parseCommand(commentBody) {
     args.push(match[1] || match[2] || match[3]);
   }
 
-  if (args.length === 0) return null;
+  if (args.length < 2 || args[0] !== '$terraform') return null;
 
-  const cmdToken = args[0];
+  const cmdToken = args[1];
   let command = null;
 
-  if (cmdToken === '/apply') {
+  if (cmdToken === 'apply') {
     command = 'apply';
-  } else if (cmdToken === '/plan') {
+  } else if (cmdToken === 'plan') {
     command = 'plan';
-  } else if (cmdToken === '/help') {
+  } else if (cmdToken === 'help') {
     return {
       command: 'help',
       targets: [],
@@ -55,7 +55,7 @@ export function parseCommand(commentBody) {
   }
 
   const targets = [];
-  for (let i = 1; i < args.length; i++) {
+  for (let i = 2; i < args.length; i++) {
     const arg = args[i];
     targets.push(arg);
   }
