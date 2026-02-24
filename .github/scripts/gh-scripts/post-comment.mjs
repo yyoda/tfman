@@ -65,18 +65,6 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
         issue_number: context.issue.number,
       });
 
-      // --- Debug start ---
-      if (core) {
-        core.info(`Debug: Searching for comments with header: "${COMMENT_HEADER}"`);
-        comments.forEach(c => {
-            const isBot = c.user.type === 'Bot';
-            const hasHeader = c.body.includes(COMMENT_HEADER);
-            const hasContHeader = CONTINUED_HEADER && c.body.includes(CONTINUED_HEADER);
-            core.info(`Debug: Comment ID ${c.id} - User: ${c.user.login} (${c.user.type}), Match: Bot=${isBot}, Header=${hasHeader || hasContHeader}`);
-        });
-      }
-      // --- Debug end ---
-
       const botComments = comments.filter(comment => 
         comment.user.type === 'Bot' && 
         (comment.body.includes(COMMENT_HEADER) || (CONTINUED_HEADER && comment.body.includes(CONTINUED_HEADER)))
