@@ -121,7 +121,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
         body
       });
     }
-    if (core) core.info(`${mode} comments posted successfully.`);
+    if (core) core.info(`${config.mode} comments posted successfully.`);
   } catch (error) {
     if (core) core.setFailed(`Failed to post comments: ${error.message}`);
   }
