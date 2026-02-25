@@ -1,4 +1,4 @@
-# GitHub Configuration & Operational Tools
+# GitHub Configuration & Operational Tools for Terraform CI/CD
 
 This document consolidates the documentation for GitHub Actions Workflows and the CLI scripts used within this repository.
 
