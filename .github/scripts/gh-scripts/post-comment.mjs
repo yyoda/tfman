@@ -56,7 +56,23 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   const COMMENT_HEADER = builder.constructor.COMMENT_HEADER;
   const CONTINUED_HEADER = builder.constructor.CONTINUED_HEADER || null;
 
-  // 1. Cleanup previous comments (Controlled by flag)
+  // 1. Collect result artifacts
+  const globber = await glob.create(behavior.artifactPattern);
+  const infoFiles = await globber.glob();
+
+  if (infoFiles.length === 0) {
+    if (core) core.info(`No ${config.mode} results found.`);
+    const message = `### Terraform ${config.mode === 'plan' ? 'Plan' : 'Apply'} Result\n\nNo changes were detected for this run.`;
+    await github.rest.issues.createComment({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        issue_number: context.issue.number,
+        body: message
+    });
+    return;
+  }
+
+  // 2. Cleanup previous comments (Controlled by flag)
   if (config.deletePreviousComments) {
     try {
       const { data: comments } = await github.rest.issues.listComments({
@@ -80,14 +96,6 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
     } catch (error) {
       if (core) core.warning(`Failed to cleanup comments: ${error.message}`);
     }
-  }
-
-  // 2. Collect result artifacts
-  const globber = await glob.create(behavior.artifactPattern);
-  const infoFiles = await globber.glob();
-  if (infoFiles.length === 0) {
-    if (core) core.info(`No ${config.mode} results found to post.`);
-    return;
   }
 
   // 3. Add results to Builder
