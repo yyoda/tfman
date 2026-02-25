@@ -22,23 +22,31 @@ async function main() {
           args: commandArgs,
           options: {
             base: { type: 'string' },
-            head: { type: 'string' }
+            head: { type: 'string' },
+            'deps-file': { type: 'string' },
+            output: { type: 'string' }
           },
-          strict: false // allow other args? no, but strict ensures valid options
+          strict: false
         });
         const result = await runDetectChanges(values);
-        console.log(JSON.stringify({ include: result }));
+        if (result && !values.output) {
+             console.log(JSON.stringify(result, null, 2));
+        }
         break;
       }
       case 'select-targets': {
         const { values } = parseArgs({
-          args: commandArgs,
-          options: {
-            targets: { type: 'string' }
-          }
+            args: commandArgs,
+            options: {
+                targets: { type: 'string' },
+                output: { type: 'string' }
+            },
+            strict: false
         });
         const result = await runSelectTargets(values);
-        console.log(JSON.stringify({ include: result }));
+        if (result && !values.output) {
+            console.log(JSON.stringify(result, null, 2));
+        }
         break;
       }
       case 'generate-deps': {
@@ -48,7 +56,8 @@ async function main() {
             root: { type: 'string' },
             output: { type: 'string' },
             'ignore-file': { type: 'string' }
-          }
+          },
+          strict: false
         });
         await runGenerateDeps(values);
         break;
@@ -60,15 +69,12 @@ async function main() {
             'comment-body': { type: 'string' },
             'base-sha': { type: 'string' },
             'head-sha': { type: 'string' }
-          }
+          },
+          strict: false
         });
-        const result = await runOperateCommand({
-          commentBody: values['comment-body'],
-          baseSha: values['base-sha'],
-          headSha: values['head-sha']
-        });
+        const result = await runOperateCommand(values);
         if (result) {
-          console.log(JSON.stringify(result));
+          console.log(JSON.stringify(result, null, 2));
         }
         break;
       }

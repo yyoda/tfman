@@ -1,13 +1,17 @@
 import { detectChanges } from '../../lib/ops/change-detector.mjs';
 import { selectTargets } from '../../lib/ops/target-selector.mjs';
 import { parseCommand } from '../../lib/ops/command-parser.mjs';
+import { requireArgs } from '../../lib/utils.mjs';
 
-export async function run({ commentBody, baseSha, headSha }, dependencies = {}) {
+export async function run(args, dependencies = {}) {
   const {
     _detectChanges = detectChanges,
     _selectTargets = selectTargets,
     _parseCommand = parseCommand,
   } = dependencies;
+
+  requireArgs(args, ['comment-body', 'base-sha', 'head-sha']);
+  const { 'comment-body': commentBody, 'base-sha': baseSha, 'head-sha': headSha } = args;
 
   const parsed = _parseCommand(commentBody);
   if (!parsed) {

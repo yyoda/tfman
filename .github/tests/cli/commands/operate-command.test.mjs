@@ -6,9 +6,9 @@ describe('cli/commands/operate-command', () => {
 
   describe('run (Orchestration Logic)', () => {
     const baseArgs = {
-      commentBody: 'MOCK_BODY', // Value doesn't matter because we mock the parser
-      baseSha: 'base',
-      headSha: 'head',
+      'comment-body': 'MOCK_BODY', // Value doesn't matter because we mock the parser
+      'base-sha': 'base',
+      'head-sha': 'head',
     };
 
     it('should call detectChanges when parser returns no explicit targets', async () => {

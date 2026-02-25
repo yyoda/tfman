@@ -1,4 +1,4 @@
-import { join, relative, resolve } from 'node:path';
+import { join, relative, resolve, isAbsolute } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
 import { exists, runCommand, getWorkspaceRoot, loadJson } from '../utils.mjs';
 import { getRepoName } from '../git.mjs';
@@ -76,23 +76,30 @@ export async function resolveLocalModule(rootAbs, source, dirPath, workspaceRoot
   // 1. git:: source pointing to the current repository
   if (source.startsWith('git::') && source.includes('//') && repoName && source.includes(repoName)) {
     const parts = source.split('//');
+    // Extract path part, ignoring query parameters like ?ref=...
     const pathPart = parts[parts.length - 1].split('?')[0];
     candidatePath = resolve(workspaceRoot, pathPart);
   }
 
   // 2. Local paths
   if (!candidatePath) {
-    if (dirPath) {
+    if (dirPath && isAbsolute(dirPath)) {
+        // If dirPath is absolute, use it directly (sometimes Terraform provides this)
+        candidatePath = dirPath;
+    } else if (dirPath) {
       candidatePath = resolve(rootAbs, dirPath);
     } else if (source.startsWith('.') || source.startsWith('..')) {
-      candidatePath = resolve(rootAbs, source);
+      // Clean source of potential double slashes for local paths just in case
+      const cleanSource = source.split('//').join('/');
+      candidatePath = resolve(rootAbs, cleanSource);
     }
   }
 
   if (candidatePath && (await exists(candidatePath))) {
     try {
       const rel = relative(workspaceRoot, candidatePath);
-      if (rel !== '' && !rel.startsWith('..')) {
+      // Ensure it's not outside the workspace
+      if (rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)) {
          return rel;
       }
     } catch {

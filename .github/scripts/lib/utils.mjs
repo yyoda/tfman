@@ -104,3 +104,16 @@ export async function loadJson(filePath) {
     throw error;
   }
 }
+
+/**
+ * Validates that required keys exist in the args object.
+ * @param {object} args - The arguments object.
+ * @param {string[]} requiredKeys - List of keys that must be present.
+ * @throws {Error} If any key is missing.
+ */
+export function requireArgs(args, requiredKeys) {
+  const missing = requiredKeys.filter((key) => args[key] === undefined || args[key] === null || args[key] === '');
+  if (missing.length > 0) {
+    throw new Error(`Missing required arguments: ${missing.join(', ')}`);
+  }
+}

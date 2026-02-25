@@ -2,12 +2,17 @@ import { join, resolve } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { runCommand, getWorkspaceRoot } from '../../lib/utils.mjs';
 import { logger } from '../../lib/logger.mjs';
-import { generateDependencyGraph } from '../../lib/ops/deps-generator.mjs';
-import { loadIgnorePatterns } from '../../lib/ops/deps-generator.mjs';
+import { generateDependencyGraph as defaultGenerateDependencyGraph } from '../../lib/ops/deps-generator.mjs';
+import { loadIgnorePatterns as defaultLoadIgnorePatterns } from '../../lib/ops/deps-generator.mjs';
 import { getRepoName } from '../../lib/git.mjs';
 
-export async function run(options) {
-  const { root: rootArg, output, 'ignore-file': ignoreFile } = options;
+export async function run(args, dependencies = {}) {
+  const {
+      generateDependencyGraph = defaultGenerateDependencyGraph,
+      loadIgnorePatterns = defaultLoadIgnorePatterns
+  } = dependencies;
+
+  const { root: rootArg, output, 'ignore-file': ignoreFile } = args;
   const root = rootArg ? resolve(rootArg) : await getWorkspaceRoot();
 
   try {
@@ -27,9 +32,6 @@ export async function run(options) {
 
   if (roots) {
       logger.info(`Found ${roots.length} Terraform roots.`);
-      // Async import to avoid circular dep issues in some contexts or just clean separation, though here static import works fine.
-      // But getRepoName is re-exported from current file? It was.
-      // Let's use the re-exported or imported one.
       const repoName = await getRepoName(root);
       if (repoName) {
         logger.info(`Detected repository name: ${repoName}`);
