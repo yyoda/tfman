@@ -52,7 +52,11 @@ jobs:
           
           # Echo to stdout for logging and set as output
           echo "$MATRIX"
-          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          {
+            echo "matrix<<EOF"
+            echo "$MATRIX"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
   apply:
     needs: setup
