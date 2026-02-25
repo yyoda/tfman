@@ -14,7 +14,7 @@ The project follows a standard structure:
 
 For details on the CI/CD pipeline (Plan, Apply, Drift Detection) and operational scripts, please refer to the documentation below:
 
-- [**CI/CD & Operational Tools Documentation**](.github/README.md)
+- [**CI/CD & Operational Tools Documentation**](.github/workflows/README.md)
 
 ## 🛠 Developer Guide
 
