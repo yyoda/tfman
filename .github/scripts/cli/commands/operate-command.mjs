@@ -15,6 +15,7 @@ export async function run({ commentBody, baseSha, headSha }, dependencies = {}) 
       command: 'error',
       targets: [],
       message: 'Not a valid command.',
+      done: true,
     };
   }
 
@@ -22,32 +23,35 @@ export async function run({ commentBody, baseSha, headSha }, dependencies = {}) 
      return {
        command: parsed.command,
        targets: [],
-       message: parsed.message
+       message: parsed.message,
+       done: true,
      };
   }
 
   const { command, targets } = parsed;
-  let matrixParams = [];
+  let targetDirs = [];
 
   try {
     if (targets.length > 0) {
-      matrixParams = await _selectTargets(targets.join(' '));
+      targetDirs = await _selectTargets(targets.join(' '));
     } else {
-      matrixParams = await _detectChanges(baseSha, headSha);
+      targetDirs = await _detectChanges(baseSha, headSha);
     }
 
-    if (matrixParams.length === 0) {
+    if (targetDirs.length === 0) {
       return {
         command: 'error',
         targets: [],
         message: 'No Terraform directories matched the criteria.',
+        done: true,
       };
     }
 
     return {
       command,
-      targets: matrixParams,
+      targets: targetDirs,
       message: '',
+      done: false,
     };
 
   } catch (error) {
@@ -55,6 +59,7 @@ export async function run({ commentBody, baseSha, headSha }, dependencies = {}) 
       command: 'error',
       targets: [],
       message: error.message,
+      done: true,
     };
   }
 }

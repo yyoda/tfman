@@ -172,7 +172,9 @@ describe('post-comment.mjs', () => {
 
         assert.equal(core.info.mock.calls.length, 1);
         assert.match(core.info.mock.calls[0].arguments[0], /No plan results found/);
-        assert.equal(github.rest.issues.createComment.mock.calls.length, 0);
+        assert.equal(github.rest.issues.createComment.mock.calls.length, 1);
+        const body = github.rest.issues.createComment.mock.calls[0].arguments[0].body;
+        assert.ok(body.includes('No changes were detected for this run.'));
     });
 
 });
