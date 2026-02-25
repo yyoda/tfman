@@ -41,9 +41,17 @@ describe('lib/ops/command-parser', () => {
     });
 
     it('should ignore quotes and split args correctly', () => {
-      const result = parseCommand('$terraform apply "dev/foo bar" \'prod/baz\'');
+      // Adjusted test: Ensure targets pass strict validation (no spaces within target itself)
+      const result = parseCommand('$terraform apply "dev/foo-bar" \'prod/baz\'');
       assert.strictEqual(result.command, 'apply');
-      assert.deepStrictEqual(result.targets, ['dev/foo bar', 'prod/baz']);
+      assert.deepStrictEqual(result.targets, ['dev/foo-bar', 'prod/baz']);
+    });
+
+    it('should return error for invalid target characters', () => {
+      // Test for command injection or invalid chars
+      const result = parseCommand('$terraform plan "dev/app; rm -rf /"');
+      assert.strictEqual(result.command, 'error');
+      assert.match(result.message, /Invalid target path provided/);
     });
   });
 });

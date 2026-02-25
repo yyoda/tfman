@@ -4,8 +4,7 @@ import { constants } from 'node:fs';
 
 /**
  * Checks if a file or directory exists.
- * @param {string} path - The path to check.
- * @returns {Promise<boolean>} - True if the path exists, false otherwise.
+ ...
  */
 export async function exists(path) {
   try {
@@ -16,11 +15,43 @@ export async function exists(path) {
   }
 }
 
-export function runCommand(command, options = {}) {
+/**
+ * Execute a command.
+ * @param {string} command - The command to run.
+ * @param {string[]} [args] - Arguments for the command.
+ * @param {object} [options] - Options for spawn.
+ * @returns {Promise<{stdout: string, stderr: string}>}
+ */
+export function runCommand(command, args = [], options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, { shell: true, ...options });
+    // If second argument is options object (legacy support or simpler calls)
+    if (!Array.isArray(args) && typeof args === 'object') {
+      options = args;
+      args = [];
+    }
+
+    // Default shell: false for security. If command is a full shell string,
+    // caller must explicitly opt-in or split it manually (but prefer splitting).
+    const spawnOptions = { shell: false, ...options };
+
+    // Handle case where legacy implementation passed a full string command
+    // and shell: true was implicit/default.
+    // If we receive a command with spaces and no args, and shell is NOT explicitly true,
+    // we should try to be helpful but safe. 
+    // Ideally, callers should be updated. For this refactor, we enforce shell: false default.
+
+    // If logic above is too strict for existing callers that do `runCommand('git rev-parse ...')`
+    // we can perform a simple split if args is empty.
+    if (args.length === 0 && command.includes(' ') && !spawnOptions.shell) {
+      const parts = command.split(/\s+/);
+      command = parts[0];
+      args = parts.slice(1);
+    }
+
+    const child = spawn(command, args, spawnOptions);
     const stdoutChunks = [];
     const stderrChunks = [];
+
 
     if (child.stdout) {
       child.stdout.on('data', (chunk) => stdoutChunks.push(chunk));
@@ -35,8 +66,11 @@ export function runCommand(command, options = {}) {
     });
 
     child.on('close', (code) => {
-      const stdout = Buffer.concat(stdoutChunks).toString('utf-8').trim();
-      const stderr = Buffer.concat(stderrChunks).toString('utf-8').trim();
+      stdoutChunks.length > 0 ? Buffer.concat(stdoutChunks).toString('utf-8').trim() : '';
+      stderrChunks.length > 0 ? Buffer.concat(stderrChunks).toString('utf-8').trim() : '';
+
+      const stdout = stdoutChunks.length > 0 ? Buffer.concat(stdoutChunks).toString('utf-8').trim() : '';
+      const stderr = stderrChunks.length > 0 ? Buffer.concat(stderrChunks).toString('utf-8').trim() : '';
 
       if (code !== 0) {
         const error = new Error(`Command failed: ${command}\n${stderr}`);
@@ -52,7 +86,7 @@ export function runCommand(command, options = {}) {
 }
 
 export async function getWorkspaceRoot() {
-  const { stdout } = await runCommand('git rev-parse --show-toplevel');
+  const { stdout } = await runCommand('git', ['rev-parse', '--show-toplevel']);
   return stdout;
 }
 

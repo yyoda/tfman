@@ -112,7 +112,7 @@ export async function resolveLocalModule(rootAbs, source, dirPath, workspaceRoot
  */
 async function extractModules(rootAbs, workspaceRoot, repoName, logs) {
   try {
-    const { stdout } = await runCommand('terraform modules -json', { cwd: rootAbs });
+    const { stdout } = await runCommand('terraform', ['modules', '-json'], { cwd: rootAbs });
 
     let data;
     try {
@@ -153,7 +153,7 @@ async function extractModules(rootAbs, workspaceRoot, repoName, logs) {
  */
 async function extractProviders(rootAbs, logs) {
   try {
-    const { stdout } = await runCommand('terraform providers schema -json', { cwd: rootAbs });
+    const { stdout } = await runCommand('terraform', ['providers', 'schema', '-json'], { cwd: rootAbs });
     const data = JSON.parse(stdout);
     const schemas = data.provider_schemas || {};
     // provider_schemas keys are like "registry.terraform.io/hashicorp/aws"
@@ -187,7 +187,7 @@ async function analyzeRoot(rootRelPath, workspaceRoot, repoName) {
   if (!(await exists(dotTerraform))) {
     try {
       // Ideally we should use 'terraform init -backend=false', but simplistic init might be enough for modules/providers
-      await runCommand('terraform init -backend=false -input=false', { cwd: rootAbs });
+      await runCommand('terraform', ['init', '-backend=false', '-input=false'], { cwd: rootAbs });
     } catch (error) {
       result.logs.push(`❌ Initialization failed: ${error.message}`);
       result.status = 'error';

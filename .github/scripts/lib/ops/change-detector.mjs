@@ -1,4 +1,8 @@
 
+import { join } from 'node:path';
+import { getWorkspaceRoot, loadJson } from '../utils.mjs';
+import { runGitDiff } from '../git.mjs';
+
 /**
  * Calculates which Terraform roots need execution based on changed files and dependency graph.
  * @param {string[]} changedFiles - List of changed files.
@@ -12,7 +16,7 @@ export function calculateExecutionPaths(changedFiles, depsData) {
   // Maps for quick lookup
   const rootProviders = new Map();
   const knownRoots = new Set();
-  
+
   for (const item of dirsData) {
     if (item.path) {
       knownRoots.add(item.path);
@@ -52,7 +56,7 @@ export function calculateExecutionPaths(changedFiles, depsData) {
     for (const mod of sortedModules) {
       if (file.startsWith(mod + '/')) {
         changedModules.add(mod);
-        break; 
+        break;
       }
     }
   }
@@ -76,10 +80,6 @@ export function calculateExecutionPaths(changedFiles, depsData) {
     providers: rootProviders.get(p) || []
   }));
 }
-
-import { join } from 'node:path';
-import { getWorkspaceRoot, loadJson } from '../utils.mjs';
-import { runGitDiff } from '../git.mjs';
 
 export async function detectChanges(base, head) {
   if (!base || !head) {

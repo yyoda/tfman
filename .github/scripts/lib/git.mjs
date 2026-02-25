@@ -10,7 +10,7 @@ import { logger } from './logger.mjs';
  */
 export async function runGitDiff(baseSha, headSha, root) {
   try {
-    const { stdout } = await runCommand(`git diff --name-only ${baseSha} ${headSha}`, { cwd: root });
+    const { stdout } = await runCommand('git', ['diff', '--name-only', baseSha, headSha], { cwd: root });
     return stdout.split('\n').filter(Boolean);
   } catch (error) {
     throw new Error(`Error running git diff: ${error.message}`);
@@ -24,7 +24,7 @@ export async function runGitDiff(baseSha, headSha, root) {
  */
 export async function getRepoName(root) {
   try {
-    const { stdout } = await runCommand('git remote get-url origin', { cwd: root });
+    const { stdout } = await runCommand('git', ['remote', 'get-url', 'origin'], { cwd: root });
     const url = stdout.trim();
     // Match the repo name from various git URL formats:
     // https://github.com/org/repo.git

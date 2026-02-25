@@ -11,13 +11,17 @@ describe('utils.mjs', () => {
 
   describe('runCommand', () => {
     it('should resolve with stdout when command succeeds', async () => {
-      const { stdout } = await runCommand('echo "hello world"');
+      // Use array args for security update and platform independence
+      const { stdout } = await runCommand('echo', ['hello', 'world']);
       assert.strictEqual(stdout, 'hello world');
     });
 
     it('should reject when command fails (non-zero exit code)', async () => {
+      // Use 'false' or similar command that exits with 1
+      // 'exit 1' is a shell builtin, so it won't work with spawn(..., {shell: false})
+      // Using 'false' command which is standard
       await assert.rejects(
-        async () => await runCommand('exit 1'),
+        async () => await runCommand('false'),
         (err) => {
           assert.strictEqual(err.code, 1);
           return true;
@@ -26,8 +30,10 @@ describe('utils.mjs', () => {
     });
 
     it('should return stderr content', async () => {
-      // Writing to stderr but exiting cleanly
-      const { stderr } = await runCommand('echo "warning" >&2');
+      // Cannot use shell redirection >&2 with shell: false.
+      // Need a way to write to stderr without shell.
+      // node -e "console.error('warning')" is a portable way
+      const { stderr } = await runCommand('node', ['-e', 'console.error("warning")']);
       assert.strictEqual(stderr, 'warning');
     });
   });

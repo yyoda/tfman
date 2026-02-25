@@ -11,7 +11,7 @@ export async function run(options) {
   const root = rootArg ? resolve(rootArg) : await getWorkspaceRoot();
 
   try {
-    await runCommand('terraform -version');
+    await runCommand('terraform', ['-version']);
   } catch (err) {
     logger.error("❌️ Error: 'terraform' command not found or failed to run.", err.message);
     process.exit(1);
