@@ -47,7 +47,8 @@ jobs:
           TARGETS: ${{ inputs.targets }}
         run: |
           # Use the select-targets command to generate the matrix json
-          MATRIX=$(node .github/scripts/cli/index.mjs select-targets --targets "$TARGETS")
+          # Wrap in { include: ... } and minify with jq -c
+          MATRIX=$(node .github/scripts/cli/index.mjs select-targets --targets "$TARGETS" | jq -c '{include: .}')
           
           # Echo to stdout for logging and set as output
           echo "$MATRIX"
