@@ -83,7 +83,11 @@ jobs:
           else
             MATRIX=""
           fi
-          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          {
+            echo "matrix<<EOF"
+            echo "$MATRIX"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
           COMMAND=$(echo "$RESULT" | jq -r '.command')
           echo "command=$COMMAND" >> $GITHUB_OUTPUT
           DONE=$(echo "$RESULT" | jq -r '.done // empty')
