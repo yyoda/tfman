@@ -81,7 +81,11 @@ jobs:
           COMMAND=$(echo "$RESULT" | jq -r '.command')
           echo "command=$COMMAND" >> $GITHUB_OUTPUT
           MESSAGE=$(echo "$RESULT" | jq -r '.message')
-          echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+          {
+            echo "message<<EOF"
+            echo "$MESSAGE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Post Help Comment
         if: steps.set-matrix.outputs.command == 'help'
