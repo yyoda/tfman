@@ -40,11 +40,9 @@ jobs:
         run: |
           CHANGES=$(node .github/scripts/cli/index.mjs detect-changes \
             --base ${{ github.event.pull_request.base.sha }} \
-            --head ${{ github.event.pull_request.head.sha }})          
+            --head ${{ github.event.pull_request.head.sha }} | jq -c '{include: .}')
           echo "$CHANGES" | jq .
-          echo "matrix<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$CHANGES" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "matrix=$CHANGES" >> "$GITHUB_OUTPUT"
           HAS_CHANGES=$(echo "$CHANGES" | jq '.include | length > 0')
           echo "has-changes=$HAS_CHANGES" >> "$GITHUB_OUTPUT"
 
