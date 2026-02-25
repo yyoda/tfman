@@ -1,4 +1,4 @@
-# Terraform CI/CD Reference Implementation using GitHub Actions
+# The "God-Tier" Terraform CI/CD I've Always Wanted
 
 This repository serves as a reference implementation for managing multi-cloud, multi-account, and monorepo infrastructure using Terraform and GitHub Actions.
 
