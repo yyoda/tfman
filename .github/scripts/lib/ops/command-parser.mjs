@@ -1,6 +1,6 @@
 function getHelpMessage() {
   return `
-### :robot: Terraform Apply Bot Usage
+### :robot: Terraform Bot Usage
 
 - \`$terraform apply [targets...]\`: Run \`terraform apply\`
 - \`$terraform plan [targets...]\`: Run \`terraform plan\`
