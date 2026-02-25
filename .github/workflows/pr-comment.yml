@@ -228,7 +228,7 @@ jobs:
 
   post-run:
     needs: [setup, run]
-    if: "!cancelled()"
+    if: "!cancelled() && contains(fromJson('[\"plan\", \"apply\"]'), needs.setup.outputs.command)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
