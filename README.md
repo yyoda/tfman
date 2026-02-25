@@ -1,4 +1,4 @@
-# The "God-Tier" Terraform CI/CD I've Always Wanted
+# The "God-Tier" Terraform CI/CD I've Always Wanted (Multi-Cloud, Multi-Account, Monorepo)
 
 This repository serves as a reference implementation for managing multi-cloud, multi-account, and monorepo infrastructure using Terraform and GitHub Actions.
 
