@@ -89,8 +89,7 @@ The following command is executed in the some channel. If you add a new workflow
 - **Logic Separation**: Separates complex logic (e.g., PR comment formatting, artifact aggregation) from YAML files into JavaScript modules to keep workflows clean.
 
 ### Scripts
-- `pr-review/report.mjs`: Used in the `PRReview` workflow. Aggregates results from multiple parallel `terraform plan` jobs and posts them as a single consolidated comment on the Pull Request.
-- `pr-comment/report.mjs`: Used in the `PRComment` workflow. Formats the output of `terraform apply` executions and posts a report comment back to the PR.
+- `gh-scripts/post-comment.mjs`: Utility script for posting comments to Pull Requests. It handles formatting of `terraform plan` and `terraform apply` results, and aggregating reports from multiple matrix jobs.
 
 ## GitHub Scripts CLI
 
@@ -124,11 +123,12 @@ Scans all directories containing `.terraform-version` (Terraform roots) and anal
 
 **Usage:**
 ```bash
-node .github/scripts/cli/index.mjs generate-deps [--output <path>] [--ignore-file <path>]
+node .github/scripts/cli/index.mjs generate-deps [--output <path>] [--ignore-file <path>] [--root <path>]
 ```
 
 - `--output`: Path to the output JSON file (Default: `.tfdeps.json` in workspace root).
 - `--ignore-file`: Path to the ignore file (Default: `.tfdepsignore` in workspace root).
+- `--root`: Path to the root directory to scan (Default: workspace root).
 
 #### 2. `detect-changes`
 
@@ -158,7 +158,7 @@ node .github/scripts/cli/index.mjs select-targets --targets "dir1 dir2" [--outpu
 
 #### 4. `operate-command`
 
-Parses a PR command comment (e.g., `/apply app/dev`) and prepares the execution context.
+Parses a PR command comment (e.g., `$terraform apply app/dev`) and prepares the execution context.
 
 **Usage:**
 ```bash

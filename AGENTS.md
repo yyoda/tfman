@@ -8,10 +8,10 @@ This repository is a reference implementation of a CI/CD pipeline for Terraform 
 
 ## CI/CD Architecture
 This project uses GitHub Actions for automation.
-- **Reference**: See [.github/workflows/README.md](.github/workflows/README.md) for detailed documentation on workflows (Plan, Apply, Drift Detection) and CLI tools.
+- **Reference**: See [.github/README.md](.github/README.md) for detailed documentation on workflows (Plan, Apply, Drift Detection) and CLI tools.
 
 # 🛠 Core Commands & Environment
-Managed by `tenv`. Check `.terraform-version` which exists in all Terraform execution paths.
+Managed by `.terraform-version` file (used by `tenv` locally, and `hashicorp/setup-terraform` in CI). Check `.terraform-version` which exists in all Terraform execution paths.
 
 Agents are authorized to use or reference these commands:
 - **Initialize:** `terraform init`
