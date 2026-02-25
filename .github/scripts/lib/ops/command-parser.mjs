@@ -55,15 +55,16 @@ export function parseCommand(commentBody) {
   for (let i = 2; i < args.length; i++) {
     const arg = args[i];
     // Security: Validate target argument to prevent command injection or path traversal
-    // Allow alphanumeric, forward slash, hyphen, underscore
-    if (!/^[\w\-\/]+$/.test(arg)) {
+    // Allow alphanumeric, forward slash, hyphen, underscore, and dot
+    // However, explicitly disallow ".." to prevent directory traversal
+    if (!/^[\w\-\/\.]+$/.test(arg) || /\.\./.test(arg)) {
       // Log warning or just skip/throw? 
       // For safety, let's skip invalid targets but continue parsing valid ones, 
       // or fail the whole command. Failing is safer to notify user.
       return {
         command: 'error',
         targets: [],
-        message: `Invalid target path provided: "${arg}". Only alphanumeric characters, "-", and "/" are allowed.`
+        message: `Invalid target path provided: "${arg}". Only alphanumeric characters, "-", "/", and "." are allowed. Directory traversal ".." is invalid.`
       };
     }
     targets.push(arg);
