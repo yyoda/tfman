@@ -47,6 +47,18 @@ describe('lib/ops/command-parser', () => {
       assert.deepStrictEqual(result.targets, ['dev/foo-bar', 'prod/baz']);
     });
 
+    it('should allow dots in target paths', () => {
+      const result = parseCommand('$terraform plan environments/v1.0/app .github/workflows');
+      assert.strictEqual(result.command, 'plan');
+      assert.deepStrictEqual(result.targets, ['environments/v1.0/app', '.github/workflows']);
+    });
+
+    it('should reject directory traversal attempt', () => {
+      const result = parseCommand('$terraform plan ../../../etc/passwd');
+      assert.strictEqual(result.command, 'error');
+      assert.match(result.message, /Directory traversal "\.\." is invalid/);
+    });
+
     it('should return error for invalid target characters', () => {
       // Test for command injection or invalid chars
       const result = parseCommand('$terraform plan "dev/app; rm -rf /"');

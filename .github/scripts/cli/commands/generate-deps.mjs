@@ -1,15 +1,20 @@
 import { join, resolve } from 'node:path';
-import { writeFile } from 'node:fs/promises';
-import { runCommand, getWorkspaceRoot } from '../../lib/utils.mjs';
-import { logger } from '../../lib/logger.mjs';
+import { runCommand as defaultRunCommand, getWorkspaceRoot as defaultGetWorkspaceRoot } from '../../lib/utils.mjs';
+import { logger as defaultLogger } from '../../lib/logger.mjs';
 import { generateDependencyGraph as defaultGenerateDependencyGraph } from '../../lib/ops/deps-generator.mjs';
 import { loadIgnorePatterns as defaultLoadIgnorePatterns } from '../../lib/ops/deps-generator.mjs';
-import { getRepoName } from '../../lib/git.mjs';
+import { getRepoName as defaultGetRepoName } from '../../lib/git.mjs';
+import { writeFile as defaultWriteFile } from 'node:fs/promises';
 
 export async function run(args, dependencies = {}) {
   const {
       generateDependencyGraph = defaultGenerateDependencyGraph,
-      loadIgnorePatterns = defaultLoadIgnorePatterns
+      loadIgnorePatterns = defaultLoadIgnorePatterns,
+      runCommand = defaultRunCommand,
+      getWorkspaceRoot = defaultGetWorkspaceRoot,
+      getRepoName = defaultGetRepoName,
+      logger = defaultLogger,
+      writeFile = defaultWriteFile
   } = dependencies;
 
   const { root: rootArg, output, 'ignore-file': ignoreFile } = args;
@@ -32,9 +37,12 @@ export async function run(args, dependencies = {}) {
 
   if (roots) {
       logger.info(`Found ${roots.length} Terraform roots.`);
-      const repoName = await getRepoName(root);
-      if (repoName) {
-        logger.info(`Detected repository name: ${repoName}`);
+      // const repoName = await getRepoName(root); // Use dependency
+      if (typeof getRepoName === 'function') {
+        const repoName = await getRepoName(root);
+        if (repoName) {
+          logger.info(`Detected repository name: ${repoName}`);
+        }
       }
   }
   
