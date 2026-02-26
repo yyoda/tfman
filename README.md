@@ -79,7 +79,7 @@ Create `.github/.terraform-permissions.json` to define which GitHub users are pe
 }
 ```
 
-This file is excluded from Git by default (via `.github/.gitignore`). Users not listed in this file default to the `planner` role and can only trigger `terraform plan`. If the file does not exist, all users are treated as `planner` and apply operations are disabled.
+Users not listed in this file default to the `planner` role and can only trigger `terraform plan`. If the file does not exist, all users are treated as `planner` and apply operations are disabled.
 
 > [!IMPORTANT]
 > The `applier` role is required for `ManualOps` and `PRComment` workflows to execute `apply`. Without any `applier` entries, those workflows will always be skipped.
