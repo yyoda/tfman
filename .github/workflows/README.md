@@ -62,7 +62,7 @@ User authorization is managed via the CLI `auth` command and a config file (`.gi
 | `planner` | Can run `terraform plan` only | Default for all unlisted users |
 | `applier` | Can run both `terraform plan` and `apply` | Users explicitly listed in `.github/.terraform-permissions.json` |
 
-**`.github/.terraform-permissions.json`** (excluded from Git via `.github/.gitignore`):
+**`.github/.terraform-permissions.json`**:
 
 ```json
 {
