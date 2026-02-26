@@ -144,11 +144,11 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 ```
 .
 ├── environments/          # Terraform root modules (one per env/account)
-│   ├── prod-us/
+│   ├── test1/
 │   │   ├── main.tf
 │   │   ├── .terraform-version   ← Required: pins TF version
-│   │   └── .env.ci              ← Optional: cloud auth config
-│   └── staging/
+│   │   └── .env.ci              ← Optional*: cloud auth config
+│   └── test2/
 ├── modules/               # Shared Terraform modules
 ├── .github/
 │   ├── workflows/         # GitHub Actions workflow definitions
@@ -159,6 +159,16 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 ├── .tfdeps.json           # Generated dependency graph (commit this)
 └── .tfdepsignore          # Ignore patterns excluded from dep scanning
 ```
+
+\* `.env.ci` is optional as a concept, but the current workflows may fail if the file is missing. For now, create an empty `.env.ci` if you don't need any variables (a follow-up change can make workflows truly optional).
+
+---
+
+## State & Backend (Important)
+
+- This repository may include sample `terraform.tfstate` / `terraform.tfstate.backup` files for demonstration.
+- In real projects, do **not** commit state files. Configure a **remote backend** (e.g., S3 + DynamoDB, Terraform Cloud, AzureRM backend) and keep state out of git.
+- The included `.gitignore` already ignores `terraform.tfstate.*`.
 
 `.tfdepsignore` format:
 
@@ -186,7 +196,9 @@ Create a directory for each Terraform root under `environments/`. Each directory
 
 - Terraform configuration files (e.g., `main.tf`)
 - `.terraform-version` **(required)** — pins the Terraform version; environments without this file are ignored by the pipeline
-- `.env.ci` *(optional)* — loaded automatically before each CI job; used to configure per-environment cloud credentials via OIDC
+- `.env.ci` *(optional\*)* — loaded automatically before each CI job; used to configure per-environment cloud credentials via OIDC
+
+\* Note: in the current workflows, the “Load .env.ci” step may fail if `.env.ci` is missing (because it uses `test -f .env.ci && ...`). Until workflows are adjusted, create an empty `.env.ci` even if you don't need cloud auth variables.
 
 Example `.env.ci` for AWS:
 
@@ -211,6 +223,9 @@ node .github/scripts/cli/index.mjs generate-deps
 ```
 
 Commit the generated `.tfdeps.json`. Re-run whenever you add or remove an environment directory.
+
+> [!TIP]
+> For reproducible provider selection (and better CI caching), commit each root's `.terraform.lock.hcl` after running `terraform init`.
 
 This file drives two critical behaviors:
 - **Change detection**: determines which roots are affected by a PR's changes
@@ -269,15 +284,17 @@ For full option details, see [`.github/workflows/README.md`](.github/workflows/R
 
 ## Why This Over Alternatives?
 
-| Feature | This Repo | Atlantis | HCP Terraform (Terraform Cloud) | Custom Scripts |
-|---|---|---|---|---|
-| Monorepo change detection | ✅ Dependency-aware | ⚠️ Directory-based by default (module-aware requires config) | ⚠️ Workspace working directory + trigger config required for monorepos | ⚠️ Possible, but you build/maintain it |
-| Parallel execution | ✅ Matrix per root | ⚠️ Parallel plan/apply is configurable | ✅ (org-level concurrency; 1 run/workspace) | ⚠️ Possible, but you build/maintain it |
-| Drift detection | ✅ Scheduled (Slack optional\*) | ⚠️ Not a built-in feature; requires surrounding automation | ✅ (typically paid tier) | ⚠️ Possible, but you build/maintain it |
-| PR comment ChatOps | ✅ | ✅ | ⚠️ PR-based workflows exist, but not PR-comment ChatOps | ⚠️ Possible, but you build/maintain it |
-| Zero new infrastructure | ✅ GitHub Actions only | ❌ Needs server | ❌ Needs SaaS | ✅ |
-| Per-env version pinning | ✅ `.terraform-version` | ✅ | ✅ (workspace setting) | ✅ |
-| RBAC without extra tooling | ⚠️ `APPLIERS` allowlist (repo-wide) | ✅/⚠️ (server-side config) | ✅ (workspace-level RBAC) | ⚠️ Usually needs VCS/CI policy + custom logic |
+| Feature | This Repo | Atlantis | HCP Terraform (Terraform Cloud) | OpenTaco (Digger) | Custom Scripts |
+|---|---|---|---|---|---|
+| Monorepo change detection | ✅ Dependency-aware | ⚠️ Directory-based by default (module-aware requires config) | ⚠️ Workspace working directory + trigger config required for monorepos | ⚠️ Config-driven (patterns/layers); not an auto dependency graph | ⚠️ Possible, but you build/maintain it |
+| Parallel execution | ✅ Matrix per root | ⚠️ Parallel plan/apply is configurable | ✅ (org-level concurrency; 1 run/workspace) | ⚠️ Layer-based parallelism (requires config) | ⚠️ Possible, but you build/maintain it |
+| Drift detection | ✅ Scheduled (Slack optional\*) | ⚠️ Not a built-in feature; requires surrounding automation | ✅ (typically paid tier) | ⚠️ Available, but typically requires additional components/integration | ⚠️ Possible, but you build/maintain it |
+| PR comment ChatOps | ✅ | ✅ | ⚠️ PR-based workflows exist, but not PR-comment ChatOps | ✅ | ⚠️ Possible, but you build/maintain it |
+| Zero new infrastructure | ✅ GitHub Actions only | ❌ Needs server | ❌ Needs SaaS | ⚠️ Often adds components beyond GitHub Actions | ✅ |
+| Per-env version pinning | ✅ `.terraform-version` | ✅ | ✅ (workspace setting) | ✅ | ✅ |
+| RBAC without extra tooling | ⚠️ `APPLIERS` allowlist (repo-wide) | ✅/⚠️ (server-side config) | ✅ (workspace-level RBAC) | ✅ (policy-based, e.g., OPA) | ⚠️ Usually needs VCS/CI policy + custom logic |
+
+† `⚠️` means "achievable, but requires configuration / extra components / additional automation" — not "impossible".
 
 \* Slack is not implemented inside the workflows (no webhook/bot). Use GitHub → Slack integration to subscribe to workflow notifications.
 
