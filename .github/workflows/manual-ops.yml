@@ -38,13 +38,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Check Permission
-        id: check-permission
+      - name: Get Roles
+        id: get-roles
         env:
           ACTOR: ${{ github.actor }}
         run: |
-          ROLES=$(node .github/scripts/cli/index.mjs auth "$ACTOR" \
-            --permission-file .github/.terraform-permissions.json)
+          ROLES=$(node .github/scripts/cli/index.mjs auth "$ACTOR" --permission-file .github/.terraform-permissions.json)
           echo "roles=$ROLES" >> $GITHUB_OUTPUT
 
   setup:
