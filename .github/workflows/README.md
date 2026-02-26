@@ -76,8 +76,8 @@ User authorization is managed via the `APPLIERS` GitHub Actions repository varia
 #### Version Management
 A `.terraform-version` file must exist in all working directories.
 
-#### Required Environment Variables (`.env.ci`)
-When executing each job, if a `.env.ci` file exists in the working directory, it is automatically loaded.
+#### Optional Environment Variables (`.env.ci`)
+When executing each job, if a `.env.ci` file exists in the working directory, it is automatically loaded. If it does not exist, the workflow logs a skip message and continues.
 
 #### Dependency Definition (`.tfdeps.json`)
 `DriftDetection` and parts of the change detection logic depend on the `.tfdeps.json` file, which defines the directory structure and dependencies. If you add a new Terraform directory or delete one, you must update this file.

@@ -95,7 +95,7 @@ jobs:
         run: mkdir -p $TF_PLUGIN_CACHE_DIR
 
       - name: Load .env.ci
-        run: test -f .env.ci && cat .env.ci >> $GITHUB_ENV
+        run: test -f .env.ci && cat .env.ci >> "$GITHUB_ENV" || echo ".env.ci not found, skipping"
 
       - name: Configure AWS Credentials
         if: contains(matrix.providers, 'registry.terraform.io/hashicorp/aws') || contains(matrix.providers, 'registry.terraform.io/hashicorp/awscc')

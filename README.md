@@ -160,7 +160,7 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 └── .tfdepsignore          # Ignore patterns excluded from dep scanning
 ```
 
-\* `.env.ci` is optional as a concept, but the current workflows may fail if the file is missing. For now, create an empty `.env.ci` if you don't need any variables (a follow-up change can make workflows truly optional).
+\* `.env.ci` is optional. If the file is missing, workflows will log a skip message and continue.
 
 ---
 
@@ -198,7 +198,7 @@ Create a directory for each Terraform root under `environments/`. Each directory
 - `.terraform-version` **(required)** — pins the Terraform version; environments without this file are ignored by the pipeline
 - `.env.ci` *(optional\*)* — loaded automatically before each CI job; used to configure per-environment cloud credentials via OIDC
 
-\* Note: in the current workflows, the “Load .env.ci” step may fail if `.env.ci` is missing (because it uses `test -f .env.ci && ...`). Until workflows are adjusted, create an empty `.env.ci` even if you don't need cloud auth variables.
+\* Note: If `.env.ci` is missing, the workflow logs ".env.ci not found, skipping" and continues.
 
 Example `.env.ci` for AWS:
 
