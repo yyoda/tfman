@@ -50,15 +50,31 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 
 ### Operations & Configuration
 
-#### Execution User Restriction (`TF_APPLY_USERS`)
+#### Execution User Restriction
 `manual-ops.yml` and `pr-comment.yml` restrict executable users because they have powerful privileges.
 
-> [!IMPORTANT]
-> This variable is mandatory for `ManualOps` and `PRComment` features to work. If `TF_APPLY_USERS` is missing or empty, these workflows will always be skipped (disabled).
+User authorization is managed via the CLI `auth` command and a config file (`.github/.terraform-permissions.json`).
 
-The following variable must be registered in the GitHub repository settings (`Settings > Secrets and variables > Actions > Variables`).
-- **Name**: `TF_APPLY_USERS`
-- **Value**: A **JSON array** of allowed GitHub usernames. Example: `["user1", "user2", "admin-user"]`
+**Role definitions:**
+
+| Role | Description | Who gets it |
+|---|---|---|
+| `planner` | Can run `terraform plan` only | Default for all unlisted users |
+| `applier` | Can run both `terraform plan` and `apply` | Users explicitly listed in `.github/.terraform-permissions.json` |
+
+**`.github/.terraform-permissions.json`** (excluded from Git via `.github/.gitignore`):
+
+```json
+{
+  "applier": [
+    "user1",
+    "user2"
+  ]
+}
+```
+
+- Add or remove usernames under each role to grant or revoke permissions.
+- If the file does not exist, all users default to the `planner` role (apply operations are disabled).
 
 #### Version Management
 A `.terraform-version` file must exist in all working directories.
@@ -167,6 +183,20 @@ node .github/scripts/cli/index.mjs operate-command \
   --base-sha <sha> \
   --head-sha <sha>
 ```
+
+#### 5. `auth`
+
+Resolves the roles granted to a GitHub actor by reading the permissions config file.
+
+**Usage:**
+```bash
+node .github/scripts/cli/index.mjs auth <github-username> [--permission-file <path>]
+```
+
+- `<github-username>`: GitHub username to check (required).
+- `--permission-file`: Path to the permissions JSON file (Default: `.terraform-permissions.json`).
+
+**Output:** A JSON array of roles, e.g. `["applier"]` or `["planner"]`.
 
 ### Configuration Files
 

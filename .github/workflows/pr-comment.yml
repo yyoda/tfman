@@ -18,12 +18,29 @@ env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
-  setup:
+  authorize:
     if: >-
       github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '$terraform') &&
-      vars.TF_APPLY_USERS != '' &&
-      contains(fromJson(vars.TF_APPLY_USERS), github.event.comment.user.login)
+      startsWith(github.event.comment.body, '$terraform')
+    runs-on: ubuntu-latest
+    outputs:
+      roles: ${{ steps.check-permission.outputs.roles }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Get Roles
+        id: get-roles
+        env:
+          ACTOR: ${{ github.event.comment.user.login }}
+        run: |
+          ROLES=$(node .github/scripts/cli/index.mjs auth "$ACTOR" --permission-file .github/.terraform-permissions.json)
+          echo "roles=$ROLES" >> $GITHUB_OUTPUT
+
+  setup:
+    needs: authorize
     runs-on: ubuntu-latest
     outputs:
       command: ${{ steps.set-matrix.outputs.command }}
@@ -125,7 +142,7 @@ jobs:
             });
 
   run:
-    needs: setup
+    needs: [authorize, setup]
     if: needs.setup.outputs.done != 'true' && needs.setup.outputs.matrix != '' && fromJson(needs.setup.outputs.matrix).include[0] != null
     runs-on: ubuntu-latest
     name: run on ${{ matrix.path }}
@@ -205,7 +222,14 @@ jobs:
       - name: Terraform Apply
         if: needs.setup.outputs.command == 'apply'
         id: apply
+        env:
+          ROLES: ${{ needs.authorize.outputs.roles }}
+          ACTOR: ${{ github.event.comment.user.login }}
         run: |
+          if ! echo "$ROLES" | jq -e 'contains(["applier"])' > /dev/null; then
+            echo "User $ACTOR does not have permission to apply. Required role: applier."
+            exit 1
+          fi
           set -o pipefail
           terraform apply -auto-approve -input=false -no-color 2>&1 | tee apply.txt
 
