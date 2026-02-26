@@ -33,6 +33,26 @@ Adhere to the following layout within each Root Module to maintain consistency:
 - `.terraform-version`: Specifies the Terraform version used.
 - `.terraform.lock.hcl`: Provider version definitions.
 
+# 🔍 Investigation Guide
+
+When investigating an issue, start from the entry point that matches the problem type:
+
+| Problem Type | Start Here |
+|---|---|
+| CI/CD behavior or pipeline flow | `.github/workflows/README.md` |
+| Specific workflow logic | `.github/workflows/<name>.yml` |
+| Environment-specific config | `environments/<env_name>/main.tf`, `.env.ci` |
+| Shared infrastructure logic | `modules/` |
+
+## Workflow Files (`.github/workflows/`)
+- `pr-review.yml` — Terraform plan triggered on pull requests
+- `manual-ops.yml` — Manual apply and ops operations
+- `drift-detection.yml` — Scheduled drift detection
+- `pr-comment.yml` — Posts plan results as PR comments
+
+## Environments
+Each directory under `environments/` (e.g., `test1/`, `test2/`) is an independent Root Module with its own state file. When scoping an issue, confirm the target environment first.
+
 # ✅ Best Practices & Coding Standards
 Follow HashiCorp's official [Terraform Style Guide](https://developer.hashicorp.com/terraform/language/style).
 
