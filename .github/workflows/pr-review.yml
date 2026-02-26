@@ -73,7 +73,7 @@ jobs:
         run: test -f .env.ci && cat .env.ci >> $GITHUB_ENV
 
       - name: Configure AWS Credentials
-        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/aws') || contains(matrix.providers, 'registry.terraform.io/hashicorp/hashicorp/awscc')
+        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/aws') || contains(matrix.providers, 'registry.terraform.io/hashicorp/awscc')
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
