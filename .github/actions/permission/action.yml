@@ -1,0 +1,24 @@
+name: Check Operator Permission
+description: Resolve the roles granted to a GitHub actor for performing side-effecting operations
+
+inputs:
+  actor:
+    description: GitHub username to check
+    required: true
+
+outputs:
+  roles:
+    description: JSON array of roles granted to the actor (e.g. '["applier"]' or '["planner"]')
+    value: ${{ steps.check.outputs.roles }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve operator roles
+      id: check
+      shell: bash
+      env:
+        ACTOR: ${{ inputs.actor }}
+      run: |
+        ROLES=$(node "$GITHUB_WORKSPACE/.github/scripts/lib/permission.mjs" "$ACTOR")
+        echo "roles=$ROLES" >> $GITHUB_OUTPUT

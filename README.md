@@ -67,16 +67,22 @@ node .github/scripts/cli/index.mjs generate-deps
 
 Commit the generated `.tfdeps.json` to your repository. Re-run this command whenever you add or remove a Terraform environment directory.
 
-### 6. Configure GitHub repository settings
+### 6. Configure operator permissions
 
-In your repository, go to **Settings > Secrets and variables > Actions > Variables** and add:
+Create `.github/workflows/.permission.json` to define which GitHub users are permitted to run `terraform apply`:
 
-| Variable | Value | Description |
-|---|---|---|
-| `TF_APPLY_USERS` | `["user1", "user2"]` | JSON array of GitHub usernames permitted to run `apply` |
+```json
+{
+  "applier": [
+    "your-github-username"
+  ]
+}
+```
+
+This file is excluded from Git by default (via `.github/workflows/.gitignore`). Users not listed in this file default to the `planner` role and can only trigger `terraform plan`. If the file does not exist, all users are treated as `planner` and apply operations are disabled.
 
 > [!IMPORTANT]
-> `TF_APPLY_USERS` is required for `ManualOps` and `PRComment` workflows. Without it, those workflows will be skipped.
+> The `applier` role is required for `ManualOps` and `PRComment` workflows to execute `apply`. Without any `applier` entries, those workflows will always be skipped.
 
 ### 7. (Recommended) Enforce up-to-date branches before merging
 

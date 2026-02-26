@@ -50,15 +50,31 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 
 ### Operations & Configuration
 
-#### Execution User Restriction (`TF_APPLY_USERS`)
+#### Execution User Restriction
 `manual-ops.yml` and `pr-comment.yml` restrict executable users because they have powerful privileges.
 
-> [!IMPORTANT]
-> This variable is mandatory for `ManualOps` and `PRComment` features to work. If `TF_APPLY_USERS` is missing or empty, these workflows will always be skipped (disabled).
+User authorization is managed via a composite action (`.github/actions/permission`) and a config file (`.github/workflows/.permission.json`).
 
-The following variable must be registered in the GitHub repository settings (`Settings > Secrets and variables > Actions > Variables`).
-- **Name**: `TF_APPLY_USERS`
-- **Value**: A **JSON array** of allowed GitHub usernames. Example: `["user1", "user2", "admin-user"]`
+**Role definitions:**
+
+| Role | Description | Who gets it |
+|---|---|---|
+| `planner` | Can run `terraform plan` only | Default for all unlisted users |
+| `applier` | Can run both `terraform plan` and `apply` | Users explicitly listed in `.github/workflows/.permission.json` |
+
+**`.github/workflows/.permission.json`** (excluded from Git via `.github/workflows/.gitignore`):
+
+```json
+{
+  "applier": [
+    "user1",
+    "user2"
+  ]
+}
+```
+
+- Add or remove usernames under each role to grant or revoke permissions.
+- If the file does not exist, all users default to the `planner` role (apply operations are disabled).
 
 #### Version Management
 A `.terraform-version` file must exist in all working directories.

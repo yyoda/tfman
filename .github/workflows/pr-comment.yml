@@ -18,12 +18,23 @@ env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
-  setup:
+  check-auth:
     if: >-
       github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '$terraform') &&
-      vars.TF_APPLY_USERS != '' &&
-      contains(fromJson(vars.TF_APPLY_USERS), github.event.comment.user.login)
+      startsWith(github.event.comment.body, '$terraform')
+    runs-on: ubuntu-latest
+    outputs:
+      roles: ${{ steps.check-permission.outputs.roles }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check-permission
+        uses: ./.github/actions/permission
+        with:
+          actor: ${{ github.event.comment.user.login }}
+
+  setup:
+    needs: check-auth
+    if: contains(fromJson(needs.check-auth.outputs.roles), 'applier')
     runs-on: ubuntu-latest
     outputs:
       command: ${{ steps.set-matrix.outputs.command }}

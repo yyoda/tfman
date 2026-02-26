@@ -28,9 +28,21 @@ env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
-  setup:
+  check-auth:
     runs-on: ubuntu-latest
-    if: vars.TF_APPLY_USERS != '' && contains(fromJson(vars.TF_APPLY_USERS), github.actor)
+    outputs:
+      roles: ${{ steps.check-permission.outputs.roles }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check-permission
+        uses: ./.github/actions/permission
+        with:
+          actor: ${{ github.actor }}
+
+  setup:
+    needs: check-auth
+    runs-on: ubuntu-latest
+    if: contains(fromJson(needs.check-auth.outputs.roles), 'applier')
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
