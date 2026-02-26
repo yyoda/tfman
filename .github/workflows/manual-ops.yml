@@ -31,19 +31,19 @@ jobs:
   authorize:
     runs-on: ubuntu-latest
     outputs:
-      roles: ${{ steps.check-permission.outputs.roles }}
+      roles: ${{ steps.get-roles.outputs.roles }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
       - name: Get Roles
         id: get-roles
         env:
           ACTOR: ${{ github.actor }}
+          APPLYERS: ${{ vars.APPLYERS }}
         run: |
-          ROLES=$(node .github/scripts/cli/index.mjs auth "$ACTOR" --permission-file .github/.terraform-permissions.json)
+          if echo "$APPLYERS" | jq -e --arg actor "$ACTOR" 'contains([$actor])' > /dev/null 2>&1; then
+            ROLES='["applyer"]'
+          else
+            ROLES='["planner"]'
+          fi
           echo "roles=$ROLES" >> $GITHUB_OUTPUT
 
   setup:
@@ -150,8 +150,8 @@ jobs:
           ROLES: ${{ needs.authorize.outputs.roles }}
           ACTOR: ${{ github.actor }}
         run: |
-          if ! echo "$ROLES" | jq -e 'contains(["applier"])' > /dev/null; then
-            echo "User $ACTOR does not have permission to apply. Required role: applier."
+          if ! echo "$ROLES" | jq -e 'contains(["applyer"])' > /dev/null; then
+            echo "User $ACTOR does not have permission to apply. Required role: applyer."
             exit 1
           fi
           terraform apply -auto-approve -input=false

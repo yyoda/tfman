@@ -23,7 +23,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - `targets`: Directory paths to apply (space-separated). Example: `app/dev app/prod`
     - `command`: The command to execute. The default is `apply`, but `plan` can be specified as an option.
 - **CONDITIONS**:
-    - **Execution User Restriction**: The executor (`github.actor`) must be included in `TF_APPLY_USERS`. If not defined, the workflow is skipped.
+    - **Execution User Restriction**: The executor (`github.actor`) must be listed in the `APPLYERS` repository variable. If not included, `terraform apply` is blocked.
 
 ### PRComment
 - **PURPOSE**:
@@ -37,7 +37,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
         - Executes `terraform plan`.
         - Example: `$terraform plan`, `$terraform plan dev/frontend`
 - **CONDITIONS**:
-- **Execution User Restriction**: The comment poster must be included in `TF_APPLY_USERS`. If not defined, the workflow is skipped.
+- **Execution User Restriction**: The comment poster must be listed in the `APPLYERS` repository variable. If not included, `terraform apply` is blocked.
 
 ### DriftDetection
 - **PURPOSE**:
@@ -53,28 +53,23 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 #### Execution User Restriction
 `manual-ops.yml` and `pr-comment.yml` restrict executable users because they have powerful privileges.
 
-User authorization is managed via the CLI `auth` command and a config file (`.github/.terraform-permissions.json`).
+User authorization is managed via the `APPLYERS` GitHub Actions repository variable.
 
 **Role definitions:**
 
 | Role | Description | Who gets it |
 |---|---|---|
-| `planner` | Can run `terraform plan` only | Default for all unlisted users |
-| `applier` | Can run both `terraform plan` and `apply` | Users explicitly listed in `.github/.terraform-permissions.json` |
+| `planner` | Can run `terraform plan` only | Default for all users not in `APPLYERS` |
+| `applyer` | Can run both `terraform plan` and `apply` | Users listed in the `APPLYERS` variable |
 
-**`.github/.terraform-permissions.json`**:
+**`APPLYERS` variable** (Settings > Secrets and variables > Actions > Variables):
 
 ```json
-{
-  "applier": [
-    "user1",
-    "user2"
-  ]
-}
+["user1", "user2"]
 ```
 
-- Add or remove usernames under each role to grant or revoke permissions.
-- If the file does not exist, all users default to the `planner` role (apply operations are disabled).
+- Add or remove GitHub usernames in this JSON array to grant or revoke `applyer` permissions.
+- If the variable is not set or the user is not listed, they default to the `planner` role (apply operations are blocked).
 
 #### Version Management
 A `.terraform-version` file must exist in all working directories.
@@ -183,20 +178,6 @@ node .github/scripts/cli/index.mjs operate-command \
   --base-sha <sha> \
   --head-sha <sha>
 ```
-
-#### 5. `auth`
-
-Resolves the roles granted to a GitHub actor by reading the permissions config file.
-
-**Usage:**
-```bash
-node .github/scripts/cli/index.mjs auth <github-username> [--permission-file <path>]
-```
-
-- `<github-username>`: GitHub username to check (required).
-- `--permission-file`: Path to the permissions JSON file (Default: `.terraform-permissions.json`).
-
-**Output:** A JSON array of roles, e.g. `["applier"]` or `["planner"]`.
 
 ### Configuration Files
 
