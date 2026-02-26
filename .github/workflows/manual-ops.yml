@@ -28,7 +28,7 @@ env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
-  check-auth:
+  authorize:
     runs-on: ubuntu-latest
     outputs:
       roles: ${{ steps.check-permission.outputs.roles }}
@@ -48,9 +48,8 @@ jobs:
           echo "roles=$ROLES" >> $GITHUB_OUTPUT
 
   setup:
-    needs: check-auth
+    needs: authorize
     runs-on: ubuntu-latest
-    if: contains(fromJson(needs.check-auth.outputs.roles), 'applier')
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
@@ -78,10 +77,10 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-  apply:
-    needs: setup
+  run:
+    needs: [authorize, setup]
     runs-on: ubuntu-latest
-    name: apply on ${{ matrix.path }}
+    name: run on ${{ matrix.path }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
@@ -148,4 +147,12 @@ jobs:
 
       - name: Terraform Apply
         if: inputs.command == 'apply'
-        run: terraform apply -auto-approve -input=false
+        env:
+          ROLES: ${{ needs.authorize.outputs.roles }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if ! echo "$ROLES" | jq -e 'contains(["applier"])' > /dev/null; then
+            echo "User $ACTOR does not have permission to apply. Required role: applier."
+            exit 1
+          fi
+          terraform apply -auto-approve -input=false
