@@ -15,7 +15,17 @@ export async function loadIgnorePatterns(ignoreFilePath, root) {
     return new Set();
   }
   const content = await readFile(path, 'utf-8');
-  return new Set(content.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')));
+  const patterns = new Set();
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    // Support both "one pattern per line" and "space-separated" formats.
+    for (const token of line.split(/\s+/).map(t => t.trim()).filter(Boolean)) {
+      patterns.add(token);
+    }
+  }
+  return patterns;
 }
 
 /**

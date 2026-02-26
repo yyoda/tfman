@@ -151,8 +151,14 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 │       ├── gh-scripts/    # Actions runtime scripts (comment posting)
 │       └── lib/           # Shared logic
 ├── .tfdeps.json           # Generated dependency graph (commit this)
-└── .tfdepsignore          # Glob patterns excluded from dep scanning
+└── .tfdepsignore          # Ignore patterns excluded from dep scanning
 ```
+
+`.tfdepsignore` format:
+
+- Whitespace-separated patterns (recommended: one pattern per line)
+- Blank lines are ignored
+- Lines starting with `#` are comments
 
 ---
 

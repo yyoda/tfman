@@ -23,13 +23,24 @@ export async function run(args, dependencies = {}) {
     };
   }
 
+  // If the parser explicitly returned an error (e.g. invalid target path),
+  // do not fall back to auto-detection.
+  if (parsed.command === 'error') {
+    return {
+      command: 'error',
+      targets: [],
+      message: parsed.message || 'Invalid command.',
+      done: true,
+    };
+  }
+
   if (parsed.command === 'help') {
-     return {
-       command: parsed.command,
-       targets: [],
-       message: parsed.message,
-       done: true,
-     };
+    return {
+      command: parsed.command,
+      targets: [],
+      message: parsed.message,
+      done: true,
+    };
   }
 
   const { command, targets } = parsed;

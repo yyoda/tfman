@@ -75,6 +75,30 @@ describe('cli/commands/operate-command', () => {
       assert.ok(result.message.includes('Not a valid command'));
     });
 
+    it('should return error immediately when parser returns an explicit error', async () => {
+      let detectCalled = false;
+      const _detectChanges = async () => {
+        detectCalled = true;
+        return [{ path: 'auto/detected' }];
+      };
+
+      const _parseCommand = () => ({
+        command: 'error',
+        targets: [],
+        message: 'Invalid target path provided: "../etc".'
+      });
+
+      const result = await run(
+        { ...baseArgs },
+        { _detectChanges, _parseCommand }
+      );
+
+      assert.strictEqual(detectCalled, false);
+      assert.strictEqual(result.command, 'error');
+      assert.strictEqual(result.done, true);
+      assert.ok(result.message.includes('Invalid target path'));
+    });
+
     it('should return error when no directories are found (after detection)', async () => {
       const _parseCommand = () => ({ command: 'plan', targets: [] });
       const _detectChanges = async () => []; // Returns empty list
