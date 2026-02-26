@@ -71,6 +71,12 @@ Follow HashiCorp's official [Terraform Style Guide](https://developer.hashicorp.
 - **Complexity Management**: If a task seems overly complex or requires extensive modifications, pause and outline the proposed approach to the user before proceeding.
 - **Implicit Self-Review**: Always review your generated code against the "Best Practices" listed above before outputting it. Ensure idempotency and safety without requiring a verbose reporting cycle.
 
+## 🧠 Auto Memory (`memory/MEMORY.md`)
+- **Save**: Explicit user instructions, solutions to recurring problems, project-specific decisions
+- **Do not save**: Session-specific temporary state, content already covered in `AGENTS.md`
+- **Timing**: Save immediately on explicit user instruction; save useful patterns toward the end of a session
+- **Format**: Keep `MEMORY.md` under 200 lines. If exceeded, split into topic files and link from `MEMORY.md`
+
 ## 🛡️ Fundamental Principles for Corrective Actions
 If instructions are contradictory, unclear, or carry risk, **STOP immediately** before rewriting any code and verify with the user.
 
