@@ -1,24 +1,162 @@
-# The "God-Tier" Terraform CI/CD I've Always Wanted (Multi-Cloud, Multi-Account, Monorepo)
+# God-Tier Terraform CI/CD — Multi-Cloud · Multi-Account · Monorepo
 
-This repository serves as a reference implementation for managing multi-cloud, multi-account, and monorepo infrastructure using Terraform and GitHub Actions.
+A battle-tested reference implementation for managing Terraform at scale with GitHub Actions. Stop fighting your CI/CD. Start shipping infrastructure confidently.
 
-## 📁 Directory Structure
+---
 
-The project follows a standard structure:
+## The Problem: Terraform at Scale is a Nightmare
 
-- **`environments/`**: Contains environment-specific Terraform configurations (Root Modules) such as `test1`, `test2`. Each directory corresponds to a separate Terraform State.
-- **`modules/`**: Contains reusable Terraform modules shared across environments.
-- **`.github/`**: Contains GitHub Actions workflows, scripts, and related documentation.
+When you start with Terraform, a single state file and a `terraform apply` command is fine. But as your organization grows — more environments, more cloud accounts, more teams — that simple workflow falls apart fast.
 
-## 🚀 CI/CD & Operations
+| Pain Point | What Actually Happens |
+|---|---|
+| **Which environments did I break?** | A module change touches 6 roots. You manually run plan on each. You miss one. It breaks in production. |
+| **The plan was green yesterday...** | Someone applied a manual change directly. The code and reality are out of sync. You find out during the next outage. |
+| **Who approved this apply?** | Anyone with repo access can apply. No audit trail. No guardrails. |
+| **Multi-account credentials are a mess** | You maintain a sprawling secrets config. Rotating credentials is an all-day task. |
+| **The plan output is buried in logs** | Reviewers can't tell what's actually changing. They rubber-stamp PRs. Surprises happen. |
+| **CI takes 20 minutes for a 2-line change** | All 30 environments plan sequentially. The queue backs up. Everyone waits. |
 
-For details on the CI/CD pipeline (Plan, Apply, Drift Detection) and operational scripts, please refer to the documentation below:
+**This repository solves all of these.**
 
-- [**CI/CD & Operational Tools Documentation**](.github/workflows/README.md)
+---
 
-## 📦 Using This in Your Project
+## What You Get
 
-Follow these steps to adopt this CI/CD setup in your own repository.
+### Smart Change Detection — Plan Only What Changed
+
+The core innovation: a dependency graph (`.tfdeps.json`) maps every Terraform root to the modules it uses. When a PR modifies `modules/networking`, the pipeline automatically identifies and plans only the roots that consume that module — not all 30 environments.
+
+```
+PR changes: modules/networking/main.tf
+    ↓
+Dependency graph lookup
+    ↓
+Affected roots: environments/prod-us, environments/prod-eu, environments/staging
+    ↓
+terraform plan × 3 (in parallel)    ← Only these. Nothing else.
+```
+
+No more guessing. No more over-running. No more missed impacts.
+
+### Parallel Execution — Finish in Minutes, Not Hours
+
+Every affected environment runs as an independent GitHub Actions matrix job. Three roots run in parallel and finish together. Thirty roots? Still fast. The pipeline scales horizontally with your infrastructure.
+
+### Drift Detection — Catch Reality Diverging from Code
+
+Infrastructure drift is silent and deadly. A manual hotfix, a cloud console click, an auto-scaling event — these all diverge your actual state from your Terraform code. Left unchecked, the next `terraform apply` produces surprises.
+
+The scheduled `DriftDetection` workflow runs `terraform plan` across **all** environments on a regular cadence. If any plan shows a diff, the workflow fails and a Slack notification fires. You catch drift before it becomes an incident.
+
+### PR-First Workflow — Review Infrastructure Like Code
+
+`terraform plan` output lands directly in your PR as a formatted comment. Every reviewer sees exactly what changes before they approve. Old comments are replaced automatically — no noise, no confusion about which result is current.
+
+```
+environments/prod-us  │ +2 to add, ~1 to change, 0 to destroy
+environments/staging  │ +2 to add, ~1 to change, 0 to destroy
+```
+
+Collapsible details. Change counts at a glance. Large outputs split across multiple comments automatically. Infrastructure review becomes as natural as code review.
+
+### ChatOps — Apply from the PR Comment Thread
+
+No need to leave the PR to trigger an apply. Comment directly:
+
+```
+$terraform apply
+$terraform apply environments/prod-us environments/prod-eu
+$terraform plan environments/staging
+$terraform help
+```
+
+The pipeline parses the command, validates the targets, checks permissions, executes the operation, and posts the result — all in the same thread. Full audit trail in the PR history.
+
+### Role-Based Access Control — Not Everyone Should Apply
+
+Two roles. Zero ambiguity.
+
+| Role | Permissions | Assignment |
+|---|---|---|
+| `planner` | `terraform plan` only | Default for all users |
+| `applier` | `terraform plan` + `terraform apply` | Listed in `APPLIERS` variable |
+
+Update `APPLIERS` in GitHub repository settings. No code changes required. Add or revoke production access in seconds.
+
+### OIDC Authentication — No Long-Lived Credentials
+
+Every environment authenticates to its cloud provider using OIDC. No static AWS access keys. No service account JSON files rotting in secrets. Each environment's `.env.ci` specifies exactly which IAM role to assume, which subscription to target, which project to use.
+
+Multi-account AWS? Each environment assumes its own role. Multi-cloud? Each environment configures its own provider. The pipeline detects the required provider from the dependency graph and sets up authentication automatically.
+
+### Version Pinning Per Environment — No Surprise Upgrades
+
+A `.terraform-version` file in each environment root pins the exact Terraform version. `environments/legacy` can run 1.5.7 while `environments/greenfield` runs 1.14.5 — simultaneously, in the same pipeline. Upgrade on your own schedule.
+
+---
+
+## Architecture Overview
+
+```
+GitHub Event (PR open/update, comment, schedule, manual dispatch)
+         │
+         ▼
+┌─────────────────────────────────┐
+│  detect-changes / select-targets │  ← CLI: git diff × .tfdeps.json
+└─────────────────────────────────┘
+         │  affected roots list
+         ▼
+┌─────────────────────────────────┐
+│  GitHub Actions Matrix          │  ← One job per root (parallel)
+│  ┌──────────┐  ┌──────────┐    │
+│  │  root-A  │  │  root-B  │    │
+│  │  plan/   │  │  plan/   │    │
+│  │  apply   │  │  apply   │    │
+│  └──────────┘  └──────────┘    │
+└─────────────────────────────────┘
+         │  artifacts (per job)
+         ▼
+┌─────────────────────────────────┐
+│  Aggregate & Post Results        │  ← Single PR comment with all results
+└─────────────────────────────────┘
+```
+
+### Workflows at a Glance
+
+| Workflow | Trigger | What It Does |
+|---|---|---|
+| **PRReview** | PR created / updated | Detects changed roots → plans in parallel → posts comment |
+| **PRComment** | PR comment `$terraform ...` | Parses command → validates auth → runs plan/apply → posts result |
+| **ManualOps** | `workflow_dispatch` | Runs plan/apply for specified targets with auth check |
+| **DriftDetection** | Schedule (+ manual) | Plans all roots → fails on drift → Slack notification |
+
+---
+
+## Directory Structure
+
+```
+.
+├── environments/          # Terraform root modules (one per env/account)
+│   ├── prod-us/
+│   │   ├── main.tf
+│   │   ├── .terraform-version   ← Required: pins TF version
+│   │   └── .env.ci              ← Optional: cloud auth config
+│   └── staging/
+├── modules/               # Shared Terraform modules
+├── .github/
+│   ├── workflows/         # GitHub Actions workflow definitions
+│   └── scripts/
+│       ├── cli/           # Node.js CLI (generate-deps, detect-changes, …)
+│       ├── gh-scripts/    # Actions runtime scripts (comment posting)
+│       └── lib/           # Shared logic
+├── .tfdeps.json           # Generated dependency graph (commit this)
+└── .tfdepsignore          # Glob patterns excluded from dep scanning
+```
+
+---
+
+## Adopting This in Your Repository
 
 ### 1. Prerequisites
 
@@ -28,15 +166,17 @@ Follow these steps to adopt this CI/CD setup in your own repository.
 
 ### 2. Copy the `.github/` directory
 
-Copy the entire `.github/` directory from this repository into your own repository. This includes all workflow files, scripts, and actions.
+Copy the entire `.github/` directory from this repository into your own. This includes all workflow files, scripts, and actions.
 
 ### 3. Create your Terraform environments
 
 Create a directory for each Terraform root under `environments/`. Each directory requires:
 
 - Terraform configuration files (e.g., `main.tf`)
-- `.terraform-version` **(required)** — The CI/CD workflows use this file to pin the exact Terraform version for each environment. Without it, the environment will not be recognized as a Terraform root and will be excluded from all CI/CD operations.
-- `.env.ci` *(optional)* — A file for setting environment-specific variables that are automatically loaded before each CI job runs. This is primarily used to configure cloud provider authentication via OIDC (e.g., which IAM role to assume on AWS, which subscription to target on Azure). Since authentication requirements differ per environment, each directory has its own `.env.ci`. Example for AWS:
+- `.terraform-version` **(required)** — pins the Terraform version; environments without this file are ignored by the pipeline
+- `.env.ci` *(optional)* — loaded automatically before each CI job; used to configure per-environment cloud credentials via OIDC
+
+Example `.env.ci` for AWS:
 
 ```
 AWS_ROLE_ARN=arn:aws:iam::<account-id>:role/<role-name>
@@ -45,58 +185,90 @@ AWS_REGION=<region>
 
 ### 4. Configure cloud provider authentication
 
-Set up authentication from GitHub Actions to your cloud provider. The recommended approach is OIDC-based authentication (no long-lived credentials):
+Use OIDC-based authentication (no long-lived credentials):
 
 - **AWS**: Create an IAM Role with a GitHub OIDC trust policy and reference it in `.env.ci`
 - **Azure / GCP**: Configure the corresponding OIDC credentials in `.env.ci`
 
 ### 5. Generate the dependency graph
 
-The CI/CD workflows rely on `.tfdeps.json` to know which Terraform roots exist and how they relate to shared modules. This file drives two critical behaviors:
-
-- **Change detection**: When a PR is opened, the pipeline looks up `.tfdeps.json` to determine which environments are affected by the changed files and runs `terraform plan` only for those.
-- **Drift detection**: The scheduled drift detection workflow iterates over all roots listed in `.tfdeps.json`.
-
-Without this file, the workflows cannot determine what to run and will have no targets to operate on.
-
-Run the following command to scan all Terraform roots and generate `.tfdeps.json`:
+Run once to scan all Terraform roots and build the dependency graph:
 
 ```bash
 node .github/scripts/cli/index.mjs generate-deps
 ```
 
-Commit the generated `.tfdeps.json` to your repository. Re-run this command whenever you add or remove a Terraform environment directory.
+Commit the generated `.tfdeps.json`. Re-run whenever you add or remove an environment directory.
+
+This file drives two critical behaviors:
+- **Change detection**: determines which roots are affected by a PR's changes
+- **Drift detection**: provides the list of all roots to plan on a schedule
 
 ### 6. Configure operator permissions
 
-In your repository, go to **Settings > Secrets and variables > Actions > Variables** and create a variable named `APPLIERS` with a JSON array of GitHub usernames permitted to run `terraform apply`:
+Go to **Settings > Secrets and variables > Actions > Variables** and create `APPLIERS`:
 
 ```json
 ["your-github-username"]
 ```
 
-Users not listed in this variable default to the `planner` role and can only trigger `terraform plan`. If the variable is not set, all users are treated as `planner` and apply operations are blocked.
+Users not listed default to `planner` (plan only). If `APPLIERS` is not set, apply operations are blocked for all users.
 
 > [!IMPORTANT]
-> The `applier` role is required for `ManualOps` and `PRComment` workflows to execute `apply`. Without any entries in `APPLIERS`, those workflows will always block apply.
+> The `applier` role is required for `ManualOps` and `PRComment` workflows to execute `apply`.
 
-### 7. (Recommended) Enforce up-to-date branches before merging
+### 7. (Recommended) Require up-to-date branches before merging
 
-When a PR becomes outdated (i.e., new commits are merged into the base branch after the PR's `terraform plan` ran), the plan results shown on that PR are no longer accurate. Merging based on a stale plan can lead to unexpected infrastructure changes.
+A PR plan becomes stale the moment new commits land on the base branch. Merging a stale plan can produce unexpected changes.
 
-To prevent this, enable **"Require branches to be up to date before merging"** in your repository settings. This forces contributors to rebase or merge the latest base branch before they can merge, ensuring the `PRReview` workflow always runs against the current state.
+Prevent this by enabling **"Require branches to be up to date before merging"**:
 
-**Setup:**
-
-1. Go to **Settings > Rules > Rulesets** (or **Settings > Branches** for classic branch protection)
-2. Create or edit the ruleset targeting your main branch (e.g., `main`)
-3. Under **Branch rules**, enable **"Require branches to be up to date before merging"**
-4. Save the ruleset
+1. Go to **Settings > Rules > Rulesets** (or **Settings > Branches** for classic protection)
+2. Create or edit the ruleset targeting your main branch
+3. Enable **"Require branches to be up to date before merging"**
+4. Save
 
 ### 8. (Optional) Slack integration
-
-To receive workflow notifications in Slack, use the GitHub Slack app and subscribe to the workflows:
 
 ```
 /github subscribe <org>/<repo> workflows:{name: "DriftDetection,PRReview,ManualOps,PRComment"}
 ```
+
+---
+
+## CLI Reference
+
+The CLI lives in `.github/scripts/cli/` and is used both by the workflows and locally.
+
+```bash
+node .github/scripts/cli/index.mjs <command> [options]
+```
+
+| Command | Description |
+|---|---|
+| `generate-deps` | Scan all Terraform roots and generate `.tfdeps.json` |
+| `detect-changes --base <sha> --head <sha>` | Map a git diff to affected roots |
+| `select-targets --targets "dir1 dir2"` | Validate and format targets for the matrix |
+| `operate-command --comment-body "..." --base-sha ... --head-sha ...` | Parse a PR comment command |
+
+For full option details, see [`.github/workflows/README.md`](.github/workflows/README.md).
+
+---
+
+## Why This Over Alternatives?
+
+| Feature | This Repo | Atlantis | Terraform Cloud | Custom Scripts |
+|---|---|---|---|---|
+| Monorepo change detection | ✅ Dependency-aware | ⚠️ Directory-only | ⚠️ Workspace-scoped | ❌ Build it yourself |
+| Parallel execution | ✅ Matrix per root | ⚠️ Serial by default | ✅ | ❌ |
+| Drift detection | ✅ Scheduled + Slack | ⚠️ Plugin required | ✅ Paid tier | ❌ |
+| PR comment ChatOps | ✅ | ✅ | ⚠️ Limited | ❌ |
+| Zero new infrastructure | ✅ GitHub Actions only | ❌ Needs server | ❌ Needs SaaS | ✅ |
+| Per-env version pinning | ✅ `.terraform-version` | ✅ | ⚠️ | ✅ |
+| RBAC without extra tooling | ✅ `APPLIERS` variable | ⚠️ Team config | ✅ | ❌ |
+
+This repository runs entirely on GitHub Actions — no additional servers, no SaaS subscriptions, no new infrastructure to manage.
+
+---
+
+*For CI/CD pipeline details and CLI documentation, see [`.github/workflows/README.md`](.github/workflows/README.md).*
