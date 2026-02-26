@@ -69,7 +69,7 @@ Commit the generated `.tfdeps.json` to your repository. Re-run this command when
 
 ### 6. Configure operator permissions
 
-In your repository, go to **Settings > Secrets and variables > Actions > Variables** and create a variable named `APPLYERS` with a JSON array of GitHub usernames permitted to run `terraform apply`:
+In your repository, go to **Settings > Secrets and variables > Actions > Variables** and create a variable named `APPLIERS` with a JSON array of GitHub usernames permitted to run `terraform apply`:
 
 ```json
 ["your-github-username"]
@@ -78,7 +78,7 @@ In your repository, go to **Settings > Secrets and variables > Actions > Variabl
 Users not listed in this variable default to the `planner` role and can only trigger `terraform plan`. If the variable is not set, all users are treated as `planner` and apply operations are blocked.
 
 > [!IMPORTANT]
-> The `applyer` role is required for `ManualOps` and `PRComment` workflows to execute `apply`. Without any entries in `APPLYERS`, those workflows will always block apply.
+> The `applier` role is required for `ManualOps` and `PRComment` workflows to execute `apply`. Without any entries in `APPLIERS`, those workflows will always block apply.
 
 ### 7. (Recommended) Enforce up-to-date branches before merging
 

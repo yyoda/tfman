@@ -23,7 +23,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - `targets`: Directory paths to apply (space-separated). Example: `app/dev app/prod`
     - `command`: The command to execute. The default is `apply`, but `plan` can be specified as an option.
 - **CONDITIONS**:
-    - **Execution User Restriction**: The executor (`github.actor`) must be listed in the `APPLYERS` repository variable. If not included, `terraform apply` is blocked.
+    - **Execution User Restriction**: The executor (`github.actor`) must be listed in the `APPLIERS` repository variable. If not included, `terraform apply` is blocked.
 
 ### PRComment
 - **PURPOSE**:
@@ -37,7 +37,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
         - Executes `terraform plan`.
         - Example: `$terraform plan`, `$terraform plan dev/frontend`
 - **CONDITIONS**:
-- **Execution User Restriction**: The comment poster must be listed in the `APPLYERS` repository variable. If not included, `terraform apply` is blocked.
+- **Execution User Restriction**: The comment poster must be listed in the `APPLIERS` repository variable. If not included, `terraform apply` is blocked.
 
 ### DriftDetection
 - **PURPOSE**:
@@ -53,22 +53,22 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 #### Execution User Restriction
 `manual-ops.yml` and `pr-comment.yml` restrict executable users because they have powerful privileges.
 
-User authorization is managed via the `APPLYERS` GitHub Actions repository variable.
+User authorization is managed via the `APPLIERS` GitHub Actions repository variable.
 
 **Role definitions:**
 
 | Role | Description | Who gets it |
 |---|---|---|
-| `planner` | Can run `terraform plan` only | Default for all users not in `APPLYERS` |
-| `applyer` | Can run both `terraform plan` and `apply` | Users listed in the `APPLYERS` variable |
+| `planner` | Can run `terraform plan` only | Default for all users not in `APPLIERS` |
+| `applier` | Can run both `terraform plan` and `apply` | Users listed in the `APPLIERS` variable |
 
-**`APPLYERS` variable** (Settings > Secrets and variables > Actions > Variables):
+**`APPLIERS` variable** (Settings > Secrets and variables > Actions > Variables):
 
 ```json
 ["user1", "user2"]
 ```
 
-- Add or remove GitHub usernames in this JSON array to grant or revoke `applyer` permissions.
+- Add or remove GitHub usernames in this JSON array to grant or revoke `APPLIERS` permissions.
 - If the variable is not set or the user is not listed, they default to the `planner` role (apply operations are blocked).
 
 #### Version Management

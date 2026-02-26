@@ -30,10 +30,10 @@ jobs:
         id: get-roles
         env:
           ACTOR: ${{ github.event.comment.user.login }}
-          APPLYERS: ${{ vars.APPLYERS }}
+          APPLIERS: ${{ vars.APPLIERS }}
         run: |
-          if echo "$APPLYERS" | jq -e --arg actor "$ACTOR" 'contains([$actor])' > /dev/null 2>&1; then
-            ROLES='["applyer"]'
+          if echo "$APPLIERS" | jq -e --arg actor "$ACTOR" 'contains([$actor])' > /dev/null 2>&1; then
+            ROLES='["applier"]'
           else
             ROLES='["planner"]'
           fi
@@ -226,8 +226,8 @@ jobs:
           ROLES: ${{ needs.authorize.outputs.roles }}
           ACTOR: ${{ github.event.comment.user.login }}
         run: |
-          if ! echo "$ROLES" | jq -e 'contains(["applyer"])' > /dev/null; then
-            echo "User $ACTOR does not have permission to apply. Required role: applyer."
+          if ! echo "$ROLES" | jq -e 'contains(["applier"])' > /dev/null; then
+            echo "User $ACTOR does not have permission to apply. Required role: applier."
             exit 1
           fi
           set -o pipefail
