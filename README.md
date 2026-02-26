@@ -188,6 +188,19 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 
 ### 2. Copy the `.github/` directory
 
+You have two options:
+
+**Option A (Recommended): Minimal YAML wrappers + Reusable Workflows**
+
+Instead of copying this repository's `.github/` implementation, add small wrapper workflow files in your repo and call the reusable workflows provided by `yyoda/tfman`.
+
+- You keep only the triggers/guards in your repo.
+- The workflow implementation (matrix orchestration, comment aggregation, CLI scripts) stays in `yyoda/tfman`.
+
+See the wrapper examples in [.github/workflows/README.md](.github/workflows/README.md).
+
+**Option B: Copy `.github/` (legacy / fully vendored)**
+
 Copy the entire `.github/` directory from this repository into your own. This includes all workflow files, scripts, and actions.
 
 ### 3. Create your Terraform environments

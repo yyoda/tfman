@@ -6,6 +6,130 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 
 ## GitHub Actions Workflows
 
+## Recommended: Reusable Workflows (minimal YAML in your repo)
+
+This repository now provides reusable workflows (triggered by `workflow_call`).
+
+In your own repository, you only keep small wrapper workflow files (triggers + guards) and call the reusable workflows from `yyoda/tfman`.
+
+Key points for OSS/public repos:
+- **Fork PRs are skipped** for `PRReview` (OIDC + real backends are not safe for untrusted forks).
+- `PRComment` (ChatOps) is restricted to **`OWNER`/`MEMBER`/`COLLABORATOR`** by default.
+- You still must commit `.tfdeps.json` and place `.terraform-version` in every Terraform root.
+
+### Wrapper examples
+
+`PRReview` wrapper (place in your repo as `.github/workflows/pr-review.yml`):
+
+```yaml
+name: PRReview
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened]
+        branches: [main]
+
+permissions:
+    id-token: write
+    contents: read
+    pull-requests: write
+
+jobs:
+    call:
+        # Skip untrusted fork PRs
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: yyoda/tfman/.github/workflows/reusable-pr-review.yml@v1
+        with:
+            pr_number: ${{ github.event.pull_request.number }}
+            base_sha: ${{ github.event.pull_request.base.sha }}
+            head_sha: ${{ github.event.pull_request.head.sha }}
+            tfman_ref: v1
+        secrets: inherit
+```
+
+`PRComment` wrapper (place in your repo as `.github/workflows/pr-comment.yml`):
+
+```yaml
+name: PRComment
+
+on:
+    issue_comment:
+        types: [created]
+
+permissions:
+    id-token: write
+    contents: read
+    pull-requests: write
+    statuses: write
+
+jobs:
+    call:
+        if: >-
+            github.event.issue.pull_request &&
+            startsWith(github.event.comment.body, '$terraform') &&
+            (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR')
+        uses: yyoda/tfman/.github/workflows/reusable-pr-comment.yml@v1
+        with:
+            pr_number: ${{ github.event.issue.number }}
+            comment_body: ${{ github.event.comment.body }}
+            comment_id: ${{ github.event.comment.id }}
+            tfman_ref: v1
+        secrets: inherit
+```
+
+`ManualOps` wrapper (place in your repo as `.github/workflows/manual-ops.yml`):
+
+```yaml
+name: ManualOps
+
+on:
+    workflow_dispatch:
+        inputs:
+            targets:
+                description: 'Target directories (space-separated)'
+                required: true
+                type: string
+            command:
+                description: 'Terraform command to execute'
+                required: true
+                type: choice
+                options: [plan, apply]
+                default: apply
+
+permissions:
+    id-token: write
+    contents: read
+
+jobs:
+    call:
+        uses: yyoda/tfman/.github/workflows/reusable-manual-ops.yml@v1
+        with:
+            targets: ${{ inputs.targets }}
+            command: ${{ inputs.command }}
+            tfman_ref: v1
+        secrets: inherit
+```
+
+`DriftDetection` wrapper (place in your repo as `.github/workflows/drift-detection.yml`):
+
+```yaml
+name: DriftDetection
+
+on:
+    schedule:
+        - cron: '0 0 * * 1'
+    workflow_dispatch:
+
+permissions:
+    id-token: write
+    contents: read
+
+jobs:
+    call:
+        uses: yyoda/tfman/.github/workflows/reusable-drift-detection.yml@v1
+        secrets: inherit
+```
+
 ### PRReview
 - **PURPOSE**:
     - Determines Terraform execution paths and posts the results of `terraform plan` as a comment when a PR is created or updated.
@@ -39,6 +163,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 - **CONDITIONS**:
     - **Targets**: Must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to repo/workspace root).
     - **Execution User Restriction**: Users not listed in `APPLIERS` can run `plan` but `apply` is blocked.
+    - **Public repo safety**: It's recommended to restrict ChatOps triggers to trusted users (e.g. `OWNER`/`MEMBER`/`COLLABORATOR`).
 
 ### DriftDetection
 - **PURPOSE**:

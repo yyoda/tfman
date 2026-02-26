@@ -1,0 +1,111 @@
+name: Reusable DriftDetection
+
+on:
+  workflow_call:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+
+jobs:
+  list-targets:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Matrix from .tfdeps.json
+        id: set-matrix
+        run: |
+          MATRIX_JSON=$(jq -c '{include: .dirs}' .tfdeps.json)
+          echo "Matrix: $MATRIX_JSON"
+          {
+            echo "matrix<<EOF"
+            echo "$MATRIX_JSON"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  drift-detection:
+    needs: list-targets
+    if: needs.list-targets.outputs.matrix != ''
+    runs-on: ubuntu-latest
+    name: check drift on ${{ matrix.path }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.list-targets.outputs.matrix) }}
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.path }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Cache Dir
+        run: mkdir -p $TF_PLUGIN_CACHE_DIR
+
+      - name: Load .env.ci
+        run: test -f .env.ci && cat .env.ci >> "$GITHUB_ENV" || echo ".env.ci not found, skipping"
+
+      - name: Configure AWS Credentials
+        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/aws') || contains(matrix.providers, 'registry.terraform.io/hashicorp/awscc')
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure Azure Credentials
+        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/azurerm')
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Configure GCP Credentials
+        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/google')
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Cache Terraform Providers
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: ${{ runner.os }}-tf-plugin-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-tf-plugin-
+
+      - name: Read Terraform Version
+        id: tf-version
+        run: echo "version=$(cat .terraform-version)" >> "$GITHUB_OUTPUT"
+        working-directory: ${{ matrix.path }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ steps.tf-version.outputs.version }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -detailed-exitcode -input=false
+          exit_code=$?
+
+          if [ $exit_code -eq 2 ]; then
+            echo "::error::Drift detected in ${{ matrix.path }}"
+            exit 1
+          elif [ $exit_code -ne 0 ]; then
+            echo "::error::Terraform plan failed in ${{ matrix.path }}"
+            exit 1
+          fi

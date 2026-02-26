@@ -17,8 +17,15 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   const { fs = _fs, path = _path } = deps;
   const config = {
       mode: options.mode || 'plan', 
-      deletePreviousComments: options.deletePreviousComments === true
+      deletePreviousComments: options.deletePreviousComments === true,
+      issueNumber: options.issueNumber
   };
+
+  const issueNumber = config.issueNumber ?? context?.issue?.number;
+  if (!issueNumber) {
+    if (core) core.setFailed('issue number is required (set options.issueNumber when running from workflow_call)');
+    return;
+  }
 
   const behaviors = {
     plan: {
@@ -66,7 +73,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
     await github.rest.issues.createComment({
         owner: context.repo.owner,
         repo: context.repo.repo,
-        issue_number: context.issue.number,
+      issue_number: issueNumber,
         body: message
     });
     return;
@@ -78,7 +85,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       const { data: comments } = await github.rest.issues.listComments({
         owner: context.repo.owner,
         repo: context.repo.repo,
-        issue_number: context.issue.number,
+        issue_number: issueNumber,
       });
 
       const botComments = comments.filter(comment => 
@@ -125,7 +132,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       await github.rest.issues.createComment({
         owner: context.repo.owner,
         repo: context.repo.repo,
-        issue_number: context.issue.number,
+        issue_number: issueNumber,
         body
       });
     }

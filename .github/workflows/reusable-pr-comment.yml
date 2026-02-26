@@ -1,0 +1,364 @@
+name: Reusable PRComment
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        type: number
+        required: true
+      comment_body:
+        type: string
+        required: true
+      comment_id:
+        type: number
+        required: false
+      tfman_ref:
+        type: string
+        required: false
+        default: v1
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  statuses: write
+
+env:
+  TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    outputs:
+      roles: ${{ steps.get-roles.outputs.roles }}
+    steps:
+      - name: Get Roles
+        id: get-roles
+        env:
+          ACTOR: ${{ github.actor }}
+          APPLIERS: ${{ vars.APPLIERS }}
+        run: |
+          if echo "$APPLIERS" | jq -e --arg actor "$ACTOR" 'contains([$actor])' > /dev/null 2>&1; then
+            ROLES='["applier"]'
+          else
+            ROLES='["planner"]'
+          fi
+          echo "roles=$ROLES" >> $GITHUB_OUTPUT
+
+  setup:
+    needs: authorize
+    runs-on: ubuntu-latest
+    outputs:
+      command: ${{ steps.set-matrix.outputs.command }}
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      ref: ${{ steps.pr-details.outputs.ref }}
+      head_sha: ${{ steps.pr-details.outputs.head_sha }}
+      done: ${{ steps.set-matrix.outputs.done }}
+    steps:
+      - name: Add reaction
+        if: inputs.comment_id
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: ${{ inputs.comment_id }},
+              content: 'eyes'
+            });
+
+      - name: Get PR Details
+        id: pr-details
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_DATA=$(gh pr view ${{ inputs.pr_number }} --repo ${{ github.repository }} --json headRefName,baseRefOid,headRefOid)
+          echo "ref=$(echo $PR_DATA | jq -r .headRefName)" >> $GITHUB_OUTPUT
+          echo "base_sha=$(echo $PR_DATA | jq -r .baseRefOid)" >> $GITHUB_OUTPUT
+          echo "head_sha=$(echo $PR_DATA | jq -r .headRefOid)" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr-details.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Resolve tfman scripts
+        id: tfman
+        run: |
+          if [ -f .github/scripts/cli/index.mjs ] && [ -f .github/scripts/gh-scripts/post-comment.mjs ]; then
+            echo "needs_checkout=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_checkout=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout tfman (scripts)
+        if: steps.tfman.outputs.needs_checkout == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: yyoda/tfman
+          ref: ${{ inputs.tfman_ref }}
+          path: .tfman
+
+      - name: Set script paths
+        id: paths
+        run: |
+          if [ "${{ steps.tfman.outputs.needs_checkout }}" = "true" ]; then
+            echo "cli_path=${{ github.workspace }}/.tfman/.github/scripts/cli/index.mjs" >> "$GITHUB_OUTPUT"
+            echo "post_comment_path=${{ github.workspace }}/.tfman/.github/scripts/gh-scripts/post-comment.mjs" >> "$GITHUB_OUTPUT"
+          else
+            echo "cli_path=${{ github.workspace }}/.github/scripts/cli/index.mjs" >> "$GITHUB_OUTPUT"
+            echo "post_comment_path=${{ github.workspace }}/.github/scripts/gh-scripts/post-comment.mjs" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Parse Comment and Generate Matrix
+        id: set-matrix
+        env:
+          COMMENT_BODY: ${{ inputs.comment_body }}
+          BASE_SHA: ${{ steps.pr-details.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.pr-details.outputs.head_sha }}
+        run: |
+          RESULT=$(node "${{ steps.paths.outputs.cli_path }}" operate-command \
+            --comment-body "$COMMENT_BODY" \
+            --base-sha "$BASE_SHA" \
+            --head-sha "$HEAD_SHA")
+          echo "$RESULT" | jq
+          TARGETS=$(echo "$RESULT" | jq -c '.targets // empty')
+          if [ -n "$TARGETS" ] && [ "$TARGETS" != "[]" ] && [ "$TARGETS" != "null" ]; then
+            MATRIX=$(echo "$TARGETS" | jq -c '{include: .}')
+          else
+            MATRIX=""
+          fi
+          {
+            echo "matrix<<EOF"
+            echo "$MATRIX"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          COMMAND=$(echo "$RESULT" | jq -r '.command')
+          echo "command=$COMMAND" >> $GITHUB_OUTPUT
+          DONE=$(echo "$RESULT" | jq -r '.done // empty')
+          echo "done=$DONE" >> $GITHUB_OUTPUT
+          MESSAGE=$(echo "$RESULT" | jq -r '.message')
+          {
+            echo "message<<EOF"
+            echo "$MESSAGE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post Command Result If Need
+        if: steps.set-matrix.outputs.done == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MESSAGE: ${{ steps.set-matrix.outputs.message }}
+        run: gh pr comment ${{ inputs.pr_number }} --body "$MESSAGE"
+
+      - name: Set Pending Status
+        if: steps.set-matrix.outputs.done != 'true' && steps.set-matrix.outputs.matrix != '' && fromJson(steps.set-matrix.outputs.matrix).include[0] != null
+        uses: actions/github-script@v7
+        env:
+          COMMAND: ${{ steps.set-matrix.outputs.command }}
+          HEAD_SHA: ${{ steps.pr-details.outputs.head_sha }}
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.HEAD_SHA,
+              state: 'pending',
+              context: `terraform/${process.env.COMMAND}`,
+              description: `Terraform ${process.env.COMMAND} is running...`,
+              target_url: `${context.payload.repository.html_url}/actions/runs/${context.runId}`
+            });
+
+  run:
+    needs: [authorize, setup]
+    if: needs.setup.outputs.done != 'true' && needs.setup.outputs.matrix != '' && fromJson(needs.setup.outputs.matrix).include[0] != null
+    runs-on: ubuntu-latest
+    name: run on ${{ matrix.path }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.path }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.setup.outputs.ref }}
+
+      - name: Create Cache Dir
+        run: mkdir -p $TF_PLUGIN_CACHE_DIR
+
+      - name: Load .env.ci
+        run: test -f .env.ci && cat .env.ci >> "$GITHUB_ENV" || echo ".env.ci not found, skipping"
+
+      - name: Configure AWS Credentials
+        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/aws') || contains(matrix.providers, 'registry.terraform.io/hashicorp/awscc')
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure Azure Credentials
+        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/azurerm')
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Configure GCP Credentials
+        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/google')
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Cache Terraform Providers
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: ${{ runner.os }}-tf-plugin-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-tf-plugin-
+
+      - name: Read Terraform Version
+        id: tf-version
+        run: echo "version=$(cat .terraform-version)" >> $GITHUB_OUTPUT
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ steps.tf-version.outputs.version }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        if: needs.setup.outputs.command == 'plan'
+        id: plan
+        run: |
+          terraform plan -input=false -out=tfplan
+          terraform show tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Terraform Apply
+        if: needs.setup.outputs.command == 'apply'
+        id: apply
+        env:
+          ROLES: ${{ needs.authorize.outputs.roles }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if ! echo "$ROLES" | jq -e 'contains(["applier"])' > /dev/null; then
+            echo "User $ACTOR does not have permission to apply. Required role: applier."
+            exit 1
+          fi
+          set -o pipefail
+          terraform apply -auto-approve -input=false -no-color 2>&1 | tee apply.txt
+
+      - name: Create Artifact Metadata
+        if: always()
+        run: |
+          CLEAN_PATH=$(echo "${{ matrix.path }}" | tr '/' '-')
+          COMMAND="${{ needs.setup.outputs.command }}"
+
+          if [ "$COMMAND" == "plan" ]; then
+            OUTCOME="${{ steps.plan.outcome }}"
+          else
+            OUTCOME="${{ steps.apply.outcome }}"
+          fi
+
+          echo "{\"path\": \"${{ matrix.path }}\", \"outcome\": \"$OUTCOME\"}" > info.json
+          echo "clean_path=$CLEAN_PATH" >> $GITHUB_ENV
+          echo "command=$COMMAND" >> $GITHUB_ENV
+
+      - name: Upload Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.command }}-${{ env.clean_path }}
+          path: |
+            ${{ matrix.path }}/plan.txt
+            ${{ matrix.path }}/apply.txt
+            ${{ matrix.path }}/info.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+  post-run:
+    needs: [setup, run]
+    if: "!cancelled() && needs.setup.outputs.done != 'true'"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tfman scripts
+        id: tfman
+        run: |
+          if [ -f .github/scripts/gh-scripts/post-comment.mjs ]; then
+            echo "needs_checkout=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_checkout=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout tfman (scripts)
+        if: steps.tfman.outputs.needs_checkout == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: yyoda/tfman
+          ref: ${{ inputs.tfman_ref }}
+          path: .tfman
+
+      - name: Set post-comment path
+        id: paths
+        run: |
+          if [ "${{ steps.tfman.outputs.needs_checkout }}" = "true" ]; then
+            echo "post_comment_path=${{ github.workspace }}/.tfman/.github/scripts/gh-scripts/post-comment.mjs" >> "$GITHUB_OUTPUT"
+          else
+            echo "post_comment_path=${{ github.workspace }}/.github/scripts/gh-scripts/post-comment.mjs" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ needs.setup.outputs.command }}-*
+          path: ${{ needs.setup.outputs.command == 'plan' && 'plans' || 'applies' }}
+          merge-multiple: false
+
+      - name: Update Commit Status
+        uses: actions/github-script@v7
+        env:
+          COMMAND: ${{ needs.setup.outputs.command }}
+          HEAD_SHA: ${{ needs.setup.outputs.head_sha }}
+          JOB_RESULT: ${{ needs.run.result }}
+        with:
+          script: |
+            const command = process.env.COMMAND;
+            const result = process.env.JOB_RESULT;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.HEAD_SHA,
+              state: (result === 'success' || result === 'skipped') ? 'success' : 'failure',
+              context: `terraform/${command}`,
+              description: result === 'success' ? 'All Terraform jobs passed' : 'Some Terraform jobs failed',
+              target_url: `${context.payload.repository.html_url}/actions/runs/${context.runId}`
+            });
+
+      - name: Post Command Execution Result
+        uses: actions/github-script@v7
+        env:
+          COMMAND: ${{ needs.setup.outputs.command }}
+          POST_COMMENT_PATH: ${{ steps.paths.outputs.post_comment_path }}
+        with:
+          script: |
+            const { pathToFileURL } = require('node:url');
+            const command = process.env.COMMAND;
+            const { default: script } = await import(pathToFileURL(process.env.POST_COMMENT_PATH));
+            await script({ github, context, core, glob }, { mode: command, deletePreviousComments: command === 'plan', issueNumber: ${{ inputs.pr_number }} });
