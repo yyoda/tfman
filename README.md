@@ -69,7 +69,7 @@ Commit the generated `.tfdeps.json` to your repository. Re-run this command when
 
 ### 6. Configure operator permissions
 
-Create `.github/workflows/.permission.json` to define which GitHub users are permitted to run `terraform apply`:
+Create `.github/.terraform-permissions.json` to define which GitHub users are permitted to run `terraform apply`:
 
 ```json
 {
@@ -79,7 +79,7 @@ Create `.github/workflows/.permission.json` to define which GitHub users are per
 }
 ```
 
-This file is excluded from Git by default (via `.github/workflows/.gitignore`). Users not listed in this file default to the `planner` role and can only trigger `terraform plan`. If the file does not exist, all users are treated as `planner` and apply operations are disabled.
+This file is excluded from Git by default (via `.github/.gitignore`). Users not listed in this file default to the `planner` role and can only trigger `terraform plan`. If the file does not exist, all users are treated as `planner` and apply operations are disabled.
 
 > [!IMPORTANT]
 > The `applier` role is required for `ManualOps` and `PRComment` workflows to execute `apply`. Without any `applier` entries, those workflows will always be skipped.

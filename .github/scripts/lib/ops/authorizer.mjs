@@ -1,11 +1,8 @@
 import * as _fs from 'fs';
-import { resolve } from 'path';
-
-const OPERATORS_FILE = resolve(process.env.GITHUB_WORKSPACE ?? process.cwd(), '.github/workflows/.permission.json');
 
 /**
  * Resolves the roles granted to a GitHub actor.
- * Reads from `.github/workflows/.permission.json` in the workspace root.
+ * Reads from the given config file path.
  * If the file does not exist, returns ["planner"] unconditionally.
  *
  * @param {string} actor - GitHub username to check
@@ -28,10 +25,4 @@ export function resolveRoles(actor, configPath, deps = {}) {
     .map(([role]) => role);
 
   return roles.length > 0 ? roles : ['planner'];
-}
-
-// CLI: node permission.mjs <actor>
-if (process.argv[2]) {
-  const roles = resolveRoles(process.argv[2], OPERATORS_FILE);
-  process.stdout.write(JSON.stringify(roles) + '\n');
 }

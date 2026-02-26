@@ -27,10 +27,18 @@ jobs:
       roles: ${{ steps.check-permission.outputs.roles }}
     steps:
       - uses: actions/checkout@v4
-      - id: check-permission
-        uses: ./.github/actions/permission
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          actor: ${{ github.event.comment.user.login }}
+          node-version: '20'
+      - name: Check Permission
+        id: check-permission
+        env:
+          ACTOR: ${{ github.event.comment.user.login }}
+        run: |
+          ROLES=$(node .github/scripts/cli/index.mjs auth "$ACTOR" \
+            --permission-file .github/.terraform-permissions.json)
+          echo "roles=$ROLES" >> $GITHUB_OUTPUT
 
   setup:
     needs: check-auth

@@ -4,6 +4,7 @@ import { run as runDetectChanges } from './commands/detect-changes.mjs';
 import { run as runSelectTargets } from './commands/select-targets.mjs';
 import { run as runGenerateDeps } from './commands/generate-deps.mjs';
 import { run as runOperateCommand } from './commands/operate-command.mjs';
+import { run as runAuth } from './commands/authorize.mjs';
 
 const args = process.argv.slice(2);
 if (args.length === 0) {
@@ -76,6 +77,19 @@ async function main() {
         if (result) {
           console.log(JSON.stringify(result, null, 2));
         }
+        break;
+      }
+      case 'auth': {
+        const { values, positionals } = parseArgs({
+          args: commandArgs,
+          options: {
+            'permission-file': { type: 'string' }
+          },
+          allowPositionals: true,
+          strict: false
+        });
+        const result = runAuth({ actor: positionals[0], ...values });
+        console.log(JSON.stringify(result));
         break;
       }
       default:

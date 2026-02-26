@@ -53,16 +53,16 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 #### Execution User Restriction
 `manual-ops.yml` and `pr-comment.yml` restrict executable users because they have powerful privileges.
 
-User authorization is managed via a composite action (`.github/actions/permission`) and a config file (`.github/workflows/.permission.json`).
+User authorization is managed via the CLI `auth` command and a config file (`.github/.terraform-permissions.json`).
 
 **Role definitions:**
 
 | Role | Description | Who gets it |
 |---|---|---|
 | `planner` | Can run `terraform plan` only | Default for all unlisted users |
-| `applier` | Can run both `terraform plan` and `apply` | Users explicitly listed in `.github/workflows/.permission.json` |
+| `applier` | Can run both `terraform plan` and `apply` | Users explicitly listed in `.github/.terraform-permissions.json` |
 
-**`.github/workflows/.permission.json`** (excluded from Git via `.github/workflows/.gitignore`):
+**`.github/.terraform-permissions.json`** (excluded from Git via `.github/.gitignore`):
 
 ```json
 {
@@ -183,6 +183,20 @@ node .github/scripts/cli/index.mjs operate-command \
   --base-sha <sha> \
   --head-sha <sha>
 ```
+
+#### 5. `auth`
+
+Resolves the roles granted to a GitHub actor by reading the permissions config file.
+
+**Usage:**
+```bash
+node .github/scripts/cli/index.mjs auth <github-username> [--permission-file <path>]
+```
+
+- `<github-username>`: GitHub username to check (required).
+- `--permission-file`: Path to the permissions JSON file (Default: `.terraform-permissions.json`).
+
+**Output:** A JSON array of roles, e.g. `["applier"]` or `["planner"]`.
 
 ### Configuration Files
 

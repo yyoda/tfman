@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveRoles } from '../../scripts/lib/permission.mjs';
+import { resolveRoles } from '../../../scripts/lib/ops/authorizer.mjs';
 
 const mockFs = (content) => ({
   readFileSync: () => content,
