@@ -47,11 +47,11 @@ Every affected environment runs as an independent GitHub Actions matrix job. Thr
 
 Infrastructure drift is silent and deadly. A manual hotfix, a cloud console click, an auto-scaling event — these all diverge your actual state from your Terraform code. Left unchecked, the next `terraform apply` produces surprises.
 
-The scheduled `DriftDetection` workflow runs `terraform plan` across **all** environments on a regular cadence. If any plan shows a diff, the workflow fails and a Slack notification fires. You catch drift before it becomes an incident.
+The scheduled `DriftDetection` workflow runs `terraform plan` across **all** environments on a regular cadence. If any plan shows a diff, the workflow fails. Slack notifications are optional (see the Slack integration section).
 
 ### PR-First Workflow — Review Infrastructure Like Code
 
-`terraform plan` output lands directly in your PR as a formatted comment. Every reviewer sees exactly what changes before they approve. Old comments are replaced automatically — no noise, no confusion about which result is current.
+`terraform plan` output lands directly in your PR as a formatted comment. Every reviewer sees exactly what changes before they approve. Old plan comments are replaced automatically — no noise, no confusion about which result is current.
 
 ```
 environments/prod-us  │ +2 to add, ~1 to change, 0 to destroy
@@ -72,6 +72,8 @@ $terraform help
 ```
 
 The pipeline parses the command, validates the targets, checks permissions, executes the operation, and posts the result — all in the same thread. Full audit trail in the PR history.
+
+Note: targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to the repository root).
 
 ### Role-Based Access Control — Not Everyone Should Apply
 
@@ -129,7 +131,7 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 | **PRReview** | PR created / updated | Detects changed roots → plans in parallel → posts comment |
 | **PRComment** | PR comment `$terraform ...` | Parses command → validates auth → runs plan/apply → posts result |
 | **ManualOps** | `workflow_dispatch` | Runs plan/apply for specified targets with auth check |
-| **DriftDetection** | Schedule (+ manual) | Plans all roots → fails on drift → Slack notification |
+| **DriftDetection** | Schedule (+ manual) | Plans all roots → fails on drift (Slack optional) |
 
 ---
 

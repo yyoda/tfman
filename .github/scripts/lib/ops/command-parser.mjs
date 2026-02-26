@@ -8,6 +8,7 @@ function getHelpMessage() {
 
 **Targets:**
 - List of directories to apply changes to.
+- Targets must match Terraform root paths in .tfdeps.json (dirs[].path, relative to the repo root).
 - If **no targets** are provided, the bot detects changes based on the PR diff.
 
 **Examples:**
