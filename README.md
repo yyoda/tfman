@@ -43,11 +43,13 @@ No more guessing. No more over-running. No more missed impacts.
 
 Every affected environment runs as an independent GitHub Actions matrix job. Three roots run in parallel and finish together. Thirty roots? Still fast. The pipeline scales horizontally with your infrastructure.
 
+Note: GitHub Actions matrix has practical limits (e.g., up to 256 jobs per workflow run). Very large monorepos may need workflow sharding or hierarchy.
+
 ### Drift Detection — Catch Reality Diverging from Code
 
 Infrastructure drift is silent and deadly. A manual hotfix, a cloud console click, an auto-scaling event — these all diverge your actual state from your Terraform code. Left unchecked, the next `terraform apply` produces surprises.
 
-The scheduled `DriftDetection` workflow runs `terraform plan` across **all** environments on a regular cadence. If any plan shows a diff, the workflow fails. Slack notifications are optional (see the Slack integration section).
+The scheduled `DriftDetection` workflow runs `terraform plan` across **all** environments on a regular cadence. If any plan shows a diff, the workflow fails. Slack notifications are optional via GitHub notifications/Slack subscription (see the Slack integration section).
 
 ### PR-First Workflow — Review Infrastructure Like Code
 
@@ -85,6 +87,8 @@ Two roles. Zero ambiguity.
 | `applier` | `terraform plan` + `terraform apply` | Listed in `APPLIERS` variable |
 
 Update `APPLIERS` in GitHub repository settings. No code changes required. Add or revoke production access in seconds.
+
+Note: `APPLIERS` is a repo-wide allowlist (coarse-grained). If you need per-environment RBAC, you’ll need additional policy/design.
 
 ### OIDC Authentication — No Long-Lived Credentials
 
@@ -236,7 +240,7 @@ Prevent this by enabling **"Require branches to be up to date before merging"**:
 3. Enable **"Require branches to be up to date before merging"**
 4. Save
 
-### 8. (Optional) Slack integration
+### 8. (Optional) Slack integration (via GitHub → Slack subscription)
 
 ```
 /github subscribe <org>/<repo> workflows:{name: "DriftDetection,PRReview,ManualOps,PRComment"}
@@ -265,15 +269,17 @@ For full option details, see [`.github/workflows/README.md`](.github/workflows/R
 
 ## Why This Over Alternatives?
 
-| Feature | This Repo | Atlantis | Terraform Cloud | Custom Scripts |
+| Feature | This Repo | Atlantis | HCP Terraform (Terraform Cloud) | Custom Scripts |
 |---|---|---|---|---|
-| Monorepo change detection | ✅ Dependency-aware | ⚠️ Directory-only | ⚠️ Workspace-scoped | ❌ Build it yourself |
-| Parallel execution | ✅ Matrix per root | ⚠️ Serial by default | ✅ | ❌ |
-| Drift detection | ✅ Scheduled + Slack | ⚠️ Plugin required | ✅ Paid tier | ❌ |
-| PR comment ChatOps | ✅ | ✅ | ⚠️ Limited | ❌ |
+| Monorepo change detection | ✅ Dependency-aware | ⚠️ Directory-based by default (module-aware requires config) | ⚠️ Workspace working directory + trigger config required for monorepos | ⚠️ Possible, but you build/maintain it |
+| Parallel execution | ✅ Matrix per root | ⚠️ Parallel plan/apply is configurable | ✅ (org-level concurrency; 1 run/workspace) | ⚠️ Possible, but you build/maintain it |
+| Drift detection | ✅ Scheduled (Slack optional\*) | ⚠️ Not a built-in feature; requires surrounding automation | ✅ (typically paid tier) | ⚠️ Possible, but you build/maintain it |
+| PR comment ChatOps | ✅ | ✅ | ⚠️ PR-based workflows exist, but not PR-comment ChatOps | ⚠️ Possible, but you build/maintain it |
 | Zero new infrastructure | ✅ GitHub Actions only | ❌ Needs server | ❌ Needs SaaS | ✅ |
-| Per-env version pinning | ✅ `.terraform-version` | ✅ | ⚠️ | ✅ |
-| RBAC without extra tooling | ✅ `APPLIERS` variable | ⚠️ Team config | ✅ | ❌ |
+| Per-env version pinning | ✅ `.terraform-version` | ✅ | ✅ (workspace setting) | ✅ |
+| RBAC without extra tooling | ⚠️ `APPLIERS` allowlist (repo-wide) | ✅/⚠️ (server-side config) | ✅ (workspace-level RBAC) | ⚠️ Usually needs VCS/CI policy + custom logic |
+
+\* Slack is not implemented inside the workflows (no webhook/bot). Use GitHub → Slack integration to subscribe to workflow notifications.
 
 This repository runs entirely on GitHub Actions — no additional servers, no SaaS subscriptions, no new infrastructure to manage.
 
