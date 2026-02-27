@@ -1,6 +1,6 @@
-# God-Tier Terraform CI/CD — Multi-Cloud · Multi-Account · Monorepo
+# My Bespoke Terraform CI/CD Masterpiece (Multi-Cloud, Multi-Account, Monorepo)
 
-A battle-tested reference implementation for managing Terraform at scale with GitHub Actions. Stop fighting your CI/CD. Start shipping infrastructure confidently.
+A reference implementation for managing Terraform at scale with GitHub Actions.
 
 ---
 
@@ -17,7 +17,7 @@ When you start with Terraform, a single state file and a `terraform apply` comma
 | **The plan output is buried in logs** | Reviewers can't tell what's actually changing. They rubber-stamp PRs. Surprises happen. |
 | **CI takes 20 minutes for a 2-line change** | All 30 environments plan sequentially. The queue backs up. Everyone waits. |
 
-**This repository solves all of these.**
+This repository addresses all of these.
 
 ---
 
@@ -25,7 +25,7 @@ When you start with Terraform, a single state file and a `terraform apply` comma
 
 ### Smart Change Detection — Plan Only What Changed
 
-The core innovation: a dependency graph (`.tfdeps.json`) maps every Terraform root to the modules it uses. When a PR modifies `modules/networking`, the pipeline automatically identifies and plans only the roots that consume that module — not all 30 environments.
+A dependency graph (`.tfdeps.json`) maps every Terraform root to the modules it uses. When a PR modifies `modules/networking`, the pipeline automatically identifies and plans only the roots that consume that module — not all 30 environments.
 
 ```
 PR changes: modules/networking/main.tf
@@ -37,7 +37,6 @@ Affected roots: environments/prod-us, environments/prod-eu, environments/staging
 terraform plan × 3 (in parallel)    ← Only these. Nothing else.
 ```
 
-No more guessing. No more over-running. No more missed impacts.
 
 ### Parallel Execution — Finish in Minutes, Not Hours
 
@@ -47,7 +46,7 @@ Note: GitHub Actions matrix has practical limits (e.g., up to 256 jobs per workf
 
 ### Drift Detection — Catch Reality Diverging from Code
 
-Infrastructure drift is silent and deadly. A manual hotfix, a cloud console click, an auto-scaling event — these all diverge your actual state from your Terraform code. Left unchecked, the next `terraform apply` produces surprises.
+Infrastructure drift is easy to miss. A manual hotfix, a cloud console click, an auto-scaling event — these all diverge your actual state from your Terraform code. Left unchecked, the next `terraform apply` produces surprises.
 
 The scheduled `DriftDetection` workflow runs `terraform plan` across **all** environments on a regular cadence. If any plan shows a diff, the workflow fails. Slack notifications are optional via GitHub notifications/Slack subscription (see the Slack integration section).
 
@@ -78,8 +77,6 @@ The pipeline parses the command, validates the targets, checks permissions, exec
 Note: targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to the repository root).
 
 ### Role-Based Access Control — Not Everyone Should Apply
-
-Two roles. Zero ambiguity.
 
 | Role | Permissions | Assignment |
 |---|---|---|
