@@ -264,7 +264,7 @@ jobs:
 
   post-run:
     needs: [setup, run]
-    if: "!cancelled() && needs.setup.outputs.done != 'true'"
+    if: "!cancelled() && needs.setup.result != 'skipped' && needs.setup.outputs.done != 'true'"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
