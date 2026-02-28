@@ -18,6 +18,7 @@ Agents are authorized to use or reference these commands:
 - **Validation:** `terraform validate`
 - **Formatting:** `terraform fmt -recursive`
 - **Planning:** `terraform plan` (Always notify the user of any resource destruction)
+- **Testing:** `node --test .github/tests/**/*.test.mjs` (Node.js built-in runner, not npm)
 
 # 📁 Standard Project Structure
 
