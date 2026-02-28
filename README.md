@@ -221,6 +221,9 @@ node .github/scripts/cli/index.mjs generate-deps
 
 Commit the generated `.tfdeps.json`. Re-run whenever you add or remove an environment directory.
 
+> [!NOTE]
+> If you encounter errors during dependency generation, run `terraform init` in each Terraform root directory before running this command.
+
 > [!TIP]
 > For reproducible provider selection (and better CI caching), commit each root's `.terraform.lock.hcl` after running `terraform init`.
 

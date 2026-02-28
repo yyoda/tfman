@@ -143,6 +143,8 @@ node .github/scripts/cli/index.mjs generate-deps [--output <path>] [--ignore-fil
 - `--ignore-file`: Path to the ignore file (Default: `.tfdepsignore` in workspace root).
 - `--root`: Path to the root directory to scan (Default: workspace root).
 
+**Note:** If you encounter errors during dependency generation, run `terraform init` in each Terraform root directory before running this command.
+
 #### 2. `detect-changes`
 
 Compares two Git commits (base and head) to identify changed files and maps them to affected Terraform roots using the dependency graph.
