@@ -80,7 +80,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Configure Azure Credentials
-        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/azurerm')
+        if: contains(matrix.providers, 'registry.terraform.io/hashicorp/azurerm') || contains(matrix.providers, 'registry.terraform.io/hashicorp/azuread') || contains(matrix.providers, 'registry.terraform.io/azure/azapi')
         uses: azure/login@v2
         with:
           client-id: ${{ env.ARM_CLIENT_ID }}
