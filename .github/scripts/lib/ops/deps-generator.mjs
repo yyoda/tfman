@@ -2,6 +2,7 @@ import { join, relative, resolve, isAbsolute } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
 import { exists, runCommand, getWorkspaceRoot, loadJson } from '../utils.mjs';
 import { getRepoName } from '../git.mjs';
+import { logger } from '../logger.mjs';
 
 /**
  * Loads ignore patterns from a file.
@@ -59,6 +60,8 @@ export async function findTerraformRoots(root, ignorePatterns) {
 
          if (!isIgnored) {
            await walk(entryPath);
+         } else {
+           logger.info(`[skip] ${relEntry}`);
          }
       } else if (entry.name === '.terraform-version') {
         const relRoot = relative(root, dir);
@@ -199,11 +202,14 @@ async function analyzeRoot(rootRelPath, workspaceRoot, repoName) {
     providers: []
   };
 
+  logger.info(`[${rootRelPath}] Analyzing...`);
+
   const dotTerraform = join(rootAbs, '.terraform');
   // Ensure .terraform exists (initialized)
   if (!(await exists(dotTerraform))) {
     try {
       // Ideally we should use 'terraform init -backend=false', but simplistic init might be enough for modules/providers
+      logger.info(`[${rootRelPath}] Running terraform init...`);
       await runCommand('terraform', ['init', '-backend=false', '-input=false'], { cwd: rootAbs });
     } catch (error) {
       result.logs.push(`❌ Initialization failed: ${error.message}`);
@@ -212,6 +218,7 @@ async function analyzeRoot(rootRelPath, workspaceRoot, repoName) {
     }
   }
 
+  logger.info(`[${rootRelPath}] Extracting modules and providers...`);
   const [modules, providers] = await Promise.all([
     extractModules(rootAbs, workspaceRoot, repoName, result.logs),
     extractProviders(rootAbs, result.logs)
@@ -232,7 +239,9 @@ async function analyzeRoot(rootRelPath, workspaceRoot, repoName) {
 export async function generateDependencyGraph(workspaceRoot, ignorePatterns) {
   const repoName = await getRepoName(workspaceRoot);
   const roots = await findTerraformRoots(workspaceRoot, ignorePatterns);
-  
+
+  logger.info(`Found ${roots.length} Terraform roots. Starting analysis...`);
+
   // Running in parallel might be heavy if there are many roots (init runs concurrent)
   // But for now, let's keep it parallel as per original implementation logic (implied).
   const promises = roots.map(r => analyzeRoot(r, workspaceRoot, repoName));

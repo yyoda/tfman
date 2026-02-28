@@ -36,7 +36,6 @@ export async function run(args, dependencies = {}) {
   const { results, roots } = await generateDependencyGraph(root, ignorePatterns);
 
   if (roots) {
-      logger.info(`Found ${roots.length} Terraform roots.`);
       // const repoName = await getRepoName(root); // Use dependency
       if (typeof getRepoName === 'function') {
         const repoName = await getRepoName(root);
