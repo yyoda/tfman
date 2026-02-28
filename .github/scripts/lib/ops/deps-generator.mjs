@@ -172,12 +172,23 @@ async function extractModules(rootAbs, workspaceRoot, repoName, logs) {
  * @returns {Promise<string[]>} - List of provider names.
  */
 async function extractProviders(rootAbs, logs) {
+  const lockFile = join(rootAbs, '.terraform.lock.hcl');
+  if (await exists(lockFile)) {
+    const content = await readFile(lockFile, 'utf-8');
+    const providers = [];
+    const regex = /^\s*provider\s+"([^"]+)"/gm;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      providers.push(match[1]);
+    }
+    return providers.sort();
+  }
+
+  // If Fallback: .terraform.lock.hcl does not exist
   try {
     const { stdout } = await runCommand('terraform', ['providers', 'schema', '-json'], { cwd: rootAbs });
     const data = JSON.parse(stdout);
     const schemas = data.provider_schemas || {};
-    // provider_schemas keys are like "registry.terraform.io/hashicorp/aws"
-    // We might want just the name or the full source. existing code took keys.
     return Object.keys(schemas).sort();
   } catch (error) {
     logs.push(`❌ Failed to get providers schema in ${rootAbs}: ${error.message}`);
@@ -218,11 +229,10 @@ async function analyzeRoot(rootRelPath, workspaceRoot, repoName) {
     }
   }
 
-  logger.info(`[${rootRelPath}] Extracting modules and providers...`);
-  const [modules, providers] = await Promise.all([
-    extractModules(rootAbs, workspaceRoot, repoName, result.logs),
-    extractProviders(rootAbs, result.logs)
-  ]);
+  logger.info(`[${rootRelPath}] Extracting modules...`);
+  const modules = await extractModules(rootAbs, workspaceRoot, repoName, result.logs);
+  logger.info(`[${rootRelPath}] Extracting providers...`);
+  const providers = await extractProviders(rootAbs, result.logs);
 
   result.modules = modules;
   result.providers = providers;
