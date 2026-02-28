@@ -105,24 +105,24 @@ A `.terraform-version` file in each environment root pins the exact Terraform ve
 GitHub Event (PR open/update, comment, schedule, manual dispatch)
          │
          ▼
-┌─────────────────────────────────┐
+┌────────────────────────────────-─┐
 │  detect-changes / select-targets │  ← CLI: git diff × .tfdeps.json
-└─────────────────────────────────┘
+└───────────────────────────────-──┘
          │  affected roots list
          ▼
-┌─────────────────────────────────┐
-│  GitHub Actions Matrix          │  ← One job per root (parallel)
-│  ┌──────────┐  ┌──────────┐    │
-│  │  root-A  │  │  root-B  │    │
-│  │  plan/   │  │  plan/   │    │
-│  │  apply   │  │  apply   │    │
-│  └──────────┘  └──────────┘    │
-└─────────────────────────────────┘
+┌─────────────────────────────────-┐
+│  GitHub Actions Matrix           │  ← One job per root (parallel)
+│  ┌──────────┐  ┌──────────┐      │
+│  │  root-A  │  │  root-B  │      │
+│  │  plan/   │  │  plan/   │      │
+│  │  apply   │  │  apply   │      │
+│  └──────────┘  └──────────┘      │
+└─────────────────────────────────-┘
          │  artifacts (per job)
          ▼
-┌─────────────────────────────────┐
+┌────────────────────────────────-─┐
 │  Aggregate & Post Results        │  ← Single PR comment with all results
-└─────────────────────────────────┘
+└────────────────────────────────-─┘
 ```
 
 ### Workflows at a Glance
