@@ -30,7 +30,7 @@ Agents are authorized to use or reference these commands:
 ## File Layout
 Adhere to the following layout within each Root Module to maintain consistency:
 - `main.tf`: Core resource definitions and module calls.
-- `.env.ci`: Environment variables required for CI/CD execution (e.g., AWS role ARN).
+- `.github/env.d/<path>/.env`: Environment variables required for CI/CD execution (e.g., AWS role ARN).
 - `.terraform-version`: Specifies the Terraform version used.
 - `.terraform.lock.hcl`: Provider version definitions.
 
@@ -42,7 +42,7 @@ When investigating an issue, start from the entry point that matches the problem
 |---|---|
 | CI/CD behavior or pipeline flow | `.github/workflows/README.md` |
 | Specific workflow logic | `.github/workflows/<name>.yml` |
-| Environment-specific config | `environments/<env_name>/main.tf`, `.env.ci` |
+| Environment-specific config | `environments/<env_name>/main.tf`, `.github/env.d/<path>/.env` |
 | Shared infrastructure logic | `modules/` |
 
 ## Workflow Files (`.github/workflows/`)

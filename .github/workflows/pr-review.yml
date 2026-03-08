@@ -69,8 +69,14 @@ jobs:
       - name: Create Cache Dir
         run: mkdir -p $TF_PLUGIN_CACHE_DIR
 
-      - name: Load .env.ci
-        run: test -f .env.ci && cat .env.ci >> "$GITHUB_ENV" || echo ".env.ci not found, skipping"
+      - name: Load .env
+        run: |
+          ENV_FILE="${{ github.workspace }}/.github/env.d/${{ matrix.path }}/.env"
+          if [ -f "$ENV_FILE" ]; then
+            grep -v '^\s*#' "$ENV_FILE" | grep -v '^\s*$' >> "$GITHUB_ENV"
+          else
+            echo ".env not found, skipping"
+          fi
 
       - name: Configure AWS Credentials
         if: contains(matrix.providers, 'registry.terraform.io/hashicorp/aws') || contains(matrix.providers, 'registry.terraform.io/hashicorp/awscc')
