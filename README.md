@@ -89,7 +89,7 @@ Note: `APPLIERS` is a repo-wide allowlist (coarse-grained). If you need per-envi
 
 ### OIDC Authentication — No Long-Lived Credentials
 
-Every environment authenticates to its cloud provider using OIDC. No static AWS access keys. No service account JSON files rotting in secrets. Each environment's `.env.ci` specifies exactly which IAM role to assume, which subscription to target, which project to use.
+Every environment authenticates to its cloud provider using OIDC. No static AWS access keys. No service account JSON files rotting in secrets. Each environment's `.env` (in `.github/env.d/`) specifies exactly which IAM role to assume, which subscription to target, which project to use.
 
 Multi-account AWS? Each environment assumes its own role. Multi-cloud? Each environment configures its own provider. The pipeline detects the required provider from the dependency graph and sets up authentication automatically.
 
@@ -143,11 +143,11 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 ├── environments/          # Terraform root modules (one per env/account)
 │   ├── test1/
 │   │   ├── main.tf
-│   │   ├── .terraform-version   ← Required: pins TF version
-│   │   └── .env.ci              ← Optional*: cloud auth config
+│   │   └── .terraform-version   ← Required: pins TF version
 │   └── test2/
 ├── modules/               # Shared Terraform modules
 ├── .github/
+│   ├── env.d/             # Per-environment CI config (.env files)
 │   ├── workflows/         # GitHub Actions workflow definitions
 │   └── scripts/
 │       ├── cli/           # Node.js CLI (generate-deps, detect-changes, …)
@@ -157,7 +157,7 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 └── .tfdepsignore          # Ignore patterns excluded from dep scanning
 ```
 
-\* `.env.ci` is optional. If the file is missing, workflows will log a skip message and continue.
+\* `.github/env.d/<path>/.env` is optional. If the file is missing, workflows will log a skip message and continue.
 
 ---
 
@@ -193,11 +193,11 @@ Create a directory for each Terraform root under `environments/`. Each directory
 
 - Terraform configuration files (e.g., `main.tf`)
 - `.terraform-version` **(required)** — pins the Terraform version; environments without this file are ignored by the pipeline
-- `.env.ci` *(optional\*)* — loaded automatically before each CI job; used to configure per-environment cloud credentials via OIDC
+- `.github/env.d/<path>/.env` *(optional\*)* — loaded automatically before each CI job; used to configure per-environment cloud credentials via OIDC
 
-\* Note: If `.env.ci` is missing, the workflow logs ".env.ci not found, skipping" and continues.
+\* Note: If `.env` is missing, the workflow logs ".env not found, skipping" and continues.
 
-Example `.env.ci` for AWS:
+Example `.env` for AWS (placed in `.github/env.d/<path>/.env`):
 
 ```
 AWS_ROLE_ARN=arn:aws:iam::<account-id>:role/<role-name>
@@ -208,8 +208,8 @@ AWS_REGION=<region>
 
 Use OIDC-based authentication (no long-lived credentials):
 
-- **AWS**: Create an IAM Role with a GitHub OIDC trust policy and reference it in `.env.ci`
-- **Azure / GCP**: Configure the corresponding OIDC credentials in `.env.ci`
+- **AWS**: Create an IAM Role with a GitHub OIDC trust policy and reference it in `.github/env.d/<path>/.env`
+- **Azure / GCP**: Configure the corresponding OIDC credentials in `.github/env.d/<path>/.env`
 
 ### 5. Generate the dependency graph
 
