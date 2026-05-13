@@ -45,6 +45,7 @@ jobs:
     outputs:
       command: ${{ steps.set-matrix.outputs.command }}
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+      tf_targets_json: ${{ steps.set-matrix.outputs.tf_targets_json }}
       ref: ${{ steps.pr-details.outputs.ref }}
       head_sha: ${{ steps.pr-details.outputs.head_sha }}
       done: ${{ steps.set-matrix.outputs.done }}
@@ -94,12 +95,14 @@ jobs:
             --base-sha "$BASE_SHA" \
             --head-sha "$HEAD_SHA")
           echo "$RESULT" | jq
-          TARGETS=$(echo "$RESULT" | jq -c '.targets // empty')
-          if [ -n "$TARGETS" ] && [ "$TARGETS" != "[]" ] && [ "$TARGETS" != "null" ]; then
-            MATRIX=$(echo "$TARGETS" | jq -c '{include: .}')
+          TARGET_DIRS=$(echo "$RESULT" | jq -c '.targetDirs // empty')
+          if [ -n "$TARGET_DIRS" ] && [ "$TARGET_DIRS" != "[]" ] && [ "$TARGET_DIRS" != "null" ]; then
+            MATRIX=$(echo "$TARGET_DIRS" | jq -c '{include: .}')
           else
             MATRIX=""
           fi
+          TF_TARGETS_JSON=$(echo "$RESULT" | jq -c '.tfTargets // []')
+          echo "tf_targets_json=$TF_TARGETS_JSON" >> $GITHUB_OUTPUT
           {
             echo "matrix<<EOF"
             echo "$MATRIX"
@@ -217,9 +220,17 @@ jobs:
       - name: Terraform Plan
         if: needs.setup.outputs.command == 'plan'
         id: plan
+        env:
+          TF_TARGETS_JSON: ${{ needs.setup.outputs.tf_targets_json }}
         run: |
+          TARGET_FLAGS=()
+          if [ -n "$TF_TARGETS_JSON" ] && [ "$TF_TARGETS_JSON" != "[]" ]; then
+            while IFS= read -r addr; do
+              TARGET_FLAGS+=("-target=$addr")
+            done < <(echo "$TF_TARGETS_JSON" | jq -r '.[]')
+          fi
           # Generate plan binary
-          terraform plan -input=false -out=tfplan
+          terraform plan -input=false -out=tfplan "${TARGET_FLAGS[@]}"
           # Display with color in logs
           terraform show tfplan
           # Save plain text for comment
@@ -231,13 +242,20 @@ jobs:
         env:
           ROLES: ${{ needs.authorize.outputs.roles }}
           ACTOR: ${{ github.event.comment.user.login }}
+          TF_TARGETS_JSON: ${{ needs.setup.outputs.tf_targets_json }}
         run: |
           if ! echo "$ROLES" | jq -e 'contains(["applier"])' > /dev/null; then
             echo "User $ACTOR does not have permission to apply. Required role: applier."
             exit 1
           fi
+          TARGET_FLAGS=()
+          if [ -n "$TF_TARGETS_JSON" ] && [ "$TF_TARGETS_JSON" != "[]" ]; then
+            while IFS= read -r addr; do
+              TARGET_FLAGS+=("-target=$addr")
+            done < <(echo "$TF_TARGETS_JSON" | jq -r '.[]')
+          fi
           set -o pipefail
-          terraform apply -auto-approve -input=false -no-color 2>&1 | tee apply.txt
+          terraform apply -auto-approve -input=false -no-color "${TARGET_FLAGS[@]}" 2>&1 | tee apply.txt
 
       - name: Create Artifact Metadata
         if: always()

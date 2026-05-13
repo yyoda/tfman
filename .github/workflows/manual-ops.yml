@@ -7,6 +7,11 @@ on:
         description: 'Target directories to apply (space-separated paths, e.g., account/dev account/prod)'
         required: true
         type: string
+      tf_targets:
+        description: 'Terraform resource targets (space-separated addresses, e.g., aws_instance.example module.frontend)'
+        required: false
+        type: string
+        default: ''
       command:
         description: 'Terraform command to execute'
         required: true
@@ -148,16 +153,28 @@ jobs:
 
       - name: Terraform Plan
         if: inputs.command == 'plan'
-        run: terraform plan -input=false
+        env:
+          TF_TARGETS: ${{ inputs.tf_targets }}
+        run: |
+          TARGET_FLAGS=()
+          for addr in $TF_TARGETS; do
+            TARGET_FLAGS+=("-target=$addr")
+          done
+          terraform plan -input=false "${TARGET_FLAGS[@]}"
 
       - name: Terraform Apply
         if: inputs.command == 'apply'
         env:
           ROLES: ${{ needs.authorize.outputs.roles }}
           ACTOR: ${{ github.actor }}
+          TF_TARGETS: ${{ inputs.tf_targets }}
         run: |
           if ! echo "$ROLES" | jq -e 'contains(["applier"])' > /dev/null; then
             echo "User $ACTOR does not have permission to apply. Required role: applier."
             exit 1
           fi
-          terraform apply -auto-approve -input=false
+          TARGET_FLAGS=()
+          for addr in $TF_TARGETS; do
+            TARGET_FLAGS+=("-target=$addr")
+          done
+          terraform apply -auto-approve -input=false "${TARGET_FLAGS[@]}"

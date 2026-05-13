@@ -69,12 +69,14 @@ No need to leave the PR to trigger an apply. Comment directly:
 $terraform apply
 $terraform apply environments/prod-us environments/prod-eu
 $terraform plan environments/staging
+$terraform apply -target=aws_instance.web
+$terraform apply environments/prod-us -target=aws_instance.web -target=module.vpc
 $terraform help
 ```
 
 The pipeline parses the command, validates the targets, checks permissions, executes the operation, and posts the result — all in the same thread. Full audit trail in the PR history.
 
-Note: targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to the repository root).
+Note: directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to the repository root). Resource addresses for `-target` follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`).
 
 ### Role-Based Access Control — Not Everyone Should Apply
 
