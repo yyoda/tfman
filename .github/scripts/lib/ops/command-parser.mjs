@@ -65,9 +65,8 @@ export function parseCommand(commentBody) {
   for (let i = 2; i < args.length; i++) {
     const arg = args[i];
 
-    if (arg.startsWith('-target=') || arg.startsWith('--target=')) {
-      const resourceAddr = arg.includes('--target=') ? arg.slice('--target='.length) : arg.slice('-target='.length);
-      // Security: validate Terraform resource address characters
+    if (arg.startsWith('-target=')) {
+      const resourceAddr = arg.slice('-target='.length);
       if (!/^[\w.\-\[\]]+$/.test(resourceAddr) || /\.\./.test(resourceAddr)) {
         return {
           command: 'error',
@@ -78,13 +77,7 @@ export function parseCommand(commentBody) {
       }
       tfTargets.push(resourceAddr);
     } else {
-      // Security: Validate target argument to prevent command injection or path traversal
-      // Allow alphanumeric, forward slash, hyphen, underscore, and dot
-      // However, explicitly disallow ".." to prevent directory traversal
       if (!/^[\w\-\/\.]+$/.test(arg) || /\.\./.test(arg)) {
-        // Log warning or just skip/throw?
-        // For safety, let's skip invalid targets but continue parsing valid ones,
-        // or fail the whole command. Failing is safer to notify user.
         return {
           command: 'error',
           targetDirs: [],

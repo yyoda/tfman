@@ -78,13 +78,6 @@ describe('lib/ops/command-parser', () => {
       assert.deepStrictEqual(result.tfTargets, ['aws_instance.example']);
     });
 
-    it('should parse --target= flag as tfTarget', () => {
-      const result = parseCommand('$terraform apply --target=module.frontend');
-      assert.strictEqual(result.command, 'apply');
-      assert.deepStrictEqual(result.targetDirs, []);
-      assert.deepStrictEqual(result.tfTargets, ['module.frontend']);
-    });
-
     it('should parse multiple -target= flags', () => {
       const result = parseCommand('$terraform apply -target=aws_instance.web -target=module.vpc');
       assert.strictEqual(result.command, 'apply');

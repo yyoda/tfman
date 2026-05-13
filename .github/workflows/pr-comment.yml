@@ -224,7 +224,7 @@ jobs:
           TF_TARGETS_JSON: ${{ needs.setup.outputs.tf_targets_json }}
         run: |
           TARGET_FLAGS=()
-          if [ -n "$TF_TARGETS_JSON" ] && [ "$TF_TARGETS_JSON" != "[]" ]; then
+          if [ "$TF_TARGETS_JSON" != "[]" ]; then
             while IFS= read -r addr; do
               TARGET_FLAGS+=("-target=$addr")
             done < <(echo "$TF_TARGETS_JSON" | jq -r '.[]')
@@ -249,7 +249,7 @@ jobs:
             exit 1
           fi
           TARGET_FLAGS=()
-          if [ -n "$TF_TARGETS_JSON" ] && [ "$TF_TARGETS_JSON" != "[]" ]; then
+          if [ "$TF_TARGETS_JSON" != "[]" ]; then
             while IFS= read -r addr; do
               TARGET_FLAGS+=("-target=$addr")
             done < <(echo "$TF_TARGETS_JSON" | jq -r '.[]')
