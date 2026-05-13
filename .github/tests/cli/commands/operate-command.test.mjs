@@ -11,10 +11,10 @@ describe('cli/commands/operate-command', () => {
       'head-sha': 'head',
     };
 
-    it('should call detectChanges when parser returns no explicit targets', async () => {
-      // Mock Parser: returns a valid command but NO targets
-      const _parseCommand = () => ({ command: 'apply', targets: [] });
-      
+    it('should call detectChanges when parser returns no explicit targetDirs', async () => {
+      // Mock Parser: returns a valid command but NO targetDirs
+      const _parseCommand = () => ({ command: 'apply', targetDirs: [], tfTargets: [] });
+
       let detectedDetails = null;
       // Mock Detector
       const _detectChanges = async (base, head) => {
@@ -23,7 +23,7 @@ describe('cli/commands/operate-command', () => {
       };
       // Mock Selector (should NOT be called)
       const _selectTargets = async () => { throw new Error('Should not be called'); };
-      
+
       const result = await run(
         { ...baseArgs },
         { _detectChanges, _selectTargets, _parseCommand }
@@ -32,13 +32,14 @@ describe('cli/commands/operate-command', () => {
       // Verify correct execution path
       assert.deepStrictEqual(detectedDetails, { base: 'base', head: 'head' });
       assert.strictEqual(result.command, 'apply');
-      assert.deepStrictEqual(result.targets, [{ path: 'auto/detected' }]);
+      assert.deepStrictEqual(result.targetDirs, [{ path: 'auto/detected' }]);
+      assert.deepStrictEqual(result.tfTargets, []);
     });
 
-    it('should call selectTargets when parser returns explicit targets', async () => {
-      // Mock Parser: returns explicit targets
-      const _parseCommand = () => ({ command: 'apply', targets: ['dev/app'] });
-      
+    it('should call selectTargets when parser returns explicit targetDirs', async () => {
+      // Mock Parser: returns explicit targetDirs
+      const _parseCommand = () => ({ command: 'apply', targetDirs: ['dev/app'], tfTargets: [] });
+
       let selectedTargetsArgs = null;
       // Mock Selector
       const _selectTargets = async (targets) => {
@@ -47,25 +48,36 @@ describe('cli/commands/operate-command', () => {
       };
       // Mock Detector (should NOT be called)
       const _detectChanges = async () => { throw new Error('Should not be called'); };
-      
+
       const result = await run(
         { ...baseArgs },
         { _selectTargets, _detectChanges, _parseCommand }
       );
 
-      // Verify correct execution path
-      assert.strictEqual(selectedTargetsArgs, 'dev/app'); // join(' ') is handled in selectTargets in actual code? Oh wait, let's check implementation. 
-      // The implementation does: matrixParams = await _selectTargets(targets.join(' ')); 
-      // Wait, targets is array ['dev/app']. join(' ') is correct.
-      
+      assert.strictEqual(selectedTargetsArgs, 'dev/app');
       assert.strictEqual(result.command, 'apply');
-      assert.deepStrictEqual(result.targets, [{ path: 'manual/target' }]);
+      assert.deepStrictEqual(result.targetDirs, [{ path: 'manual/target' }]);
+      assert.deepStrictEqual(result.tfTargets, []);
+    });
+
+    it('should pass tfTargets through to the result', async () => {
+      const _parseCommand = () => ({ command: 'apply', targetDirs: [], tfTargets: ['aws_instance.web', 'module.vpc'] });
+      const _detectChanges = async () => [{ path: 'auto/detected' }];
+      const _selectTargets = async () => { throw new Error('Should not be called'); };
+
+      const result = await run(
+        { ...baseArgs },
+        { _detectChanges, _selectTargets, _parseCommand }
+      );
+
+      assert.strictEqual(result.command, 'apply');
+      assert.deepStrictEqual(result.tfTargets, ['aws_instance.web', 'module.vpc']);
     });
 
     it('should return error when command parsing fails (invalid syntax)', async () => {
       // Mock Parser: returns null (invalid)
       const _parseCommand = () => null;
-      
+
       const result = await run(
         { ...baseArgs },
         { _parseCommand }
@@ -84,7 +96,8 @@ describe('cli/commands/operate-command', () => {
 
       const _parseCommand = () => ({
         command: 'error',
-        targets: [],
+        targetDirs: [],
+        tfTargets: [],
         message: 'Invalid target path provided: "../etc".'
       });
 
@@ -100,21 +113,21 @@ describe('cli/commands/operate-command', () => {
     });
 
     it('should return error when no directories are found (after detection)', async () => {
-      const _parseCommand = () => ({ command: 'plan', targets: [] });
+      const _parseCommand = () => ({ command: 'plan', targetDirs: [], tfTargets: [] });
       const _detectChanges = async () => []; // Returns empty list
 
       const result = await run(
         { ...baseArgs },
         { _detectChanges, _parseCommand }
       );
-      
+
       assert.strictEqual(result.command, 'error');
       assert.ok(result.message.includes('No Terraform directories matched'));
     });
 
     it('should return help message immediately if command is help', async () => {
       const msg = 'Usage: ...';
-      const _parseCommand = () => ({ command: 'help', targets: [], message: msg });
+      const _parseCommand = () => ({ command: 'help', targetDirs: [], tfTargets: [], message: msg });
 
       // Detect/Select should not be called
       const result = await run(
@@ -127,7 +140,7 @@ describe('cli/commands/operate-command', () => {
     });
 
     it('should return error when dependencies fail', async () => {
-      const _parseCommand = () => ({ command: 'apply', targets: [] });
+      const _parseCommand = () => ({ command: 'apply', targetDirs: [], tfTargets: [] });
       const _detectChanges = async () => { throw new Error('Git Error'); };
 
       const result = await run(

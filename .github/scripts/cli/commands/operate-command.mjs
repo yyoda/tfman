@@ -17,7 +17,8 @@ export async function run(args, dependencies = {}) {
   if (!parsed) {
     return {
       command: 'error',
-      targets: [],
+      targetDirs: [],
+      tfTargets: [],
       message: 'Not a valid command.',
       done: true,
     };
@@ -28,7 +29,8 @@ export async function run(args, dependencies = {}) {
   if (parsed.command === 'error') {
     return {
       command: 'error',
-      targets: [],
+      targetDirs: [],
+      tfTargets: [],
       message: parsed.message || 'Invalid command.',
       done: true,
     };
@@ -37,18 +39,19 @@ export async function run(args, dependencies = {}) {
   if (parsed.command === 'help') {
     return {
       command: parsed.command,
-      targets: [],
+      targetDirs: [],
+      tfTargets: [],
       message: parsed.message,
       done: true,
     };
   }
 
-  const { command, targets } = parsed;
+  const { command, targetDirs: parsedTargetDirs = [], tfTargets = [] } = parsed;
   let targetDirs = [];
 
   try {
-    if (targets.length > 0) {
-      targetDirs = await _selectTargets(targets.join(' '));
+    if (parsedTargetDirs.length > 0) {
+      targetDirs = await _selectTargets(parsedTargetDirs.join(' '));
     } else {
       targetDirs = await _detectChanges(baseSha, headSha);
     }
@@ -56,7 +59,8 @@ export async function run(args, dependencies = {}) {
     if (targetDirs.length === 0) {
       return {
         command: 'error',
-        targets: [],
+        targetDirs: [],
+        tfTargets: [],
         message: 'No Terraform directories matched the criteria.',
         done: true,
       };
@@ -64,7 +68,8 @@ export async function run(args, dependencies = {}) {
 
     return {
       command,
-      targets: targetDirs,
+      targetDirs,
+      tfTargets,
       message: '',
       done: false,
     };
@@ -72,7 +77,8 @@ export async function run(args, dependencies = {}) {
   } catch (error) {
     return {
       command: 'error',
-      targets: [],
+      targetDirs: [],
+      tfTargets: [],
       message: error.message,
       done: true,
     };

@@ -21,6 +21,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - Manually executes `terraform apply` for specific directories using workflow_dispatch. Multiple directories can be specified.
 - **INPUT PARAMETERS**:
     - `targets`: Directory paths to apply (space-separated). Example: `app/dev app/prod`
+    - `tf_targets`: *(Optional)* Terraform resource addresses to restrict the operation to (space-separated). Passed as `-target=` flags to Terraform. Example: `aws_instance.example module.frontend`
     - `command`: The command to execute. The default is `apply`, but `plan` can be specified as an option.
 - **CONDITIONS**:
     - **Execution User Restriction**: The executor (`github.actor`) must be listed in the `APPLIERS` repository variable. If not included, `terraform apply` is blocked.
@@ -29,15 +30,16 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 - **PURPOSE**:
     - Triggers `terraform apply` or `terraform plan` when a PR comment starting with `$terraform` is posted.
 - **MESSAGE COMMANDS**:
-    - **`$terraform apply [targets...]`**
+    - **`$terraform apply [targets...] [-target=<resource>...]`**
         - Executes `terraform apply`.
-        - If targets are omitted, applies all detected changes.
-        - Example: `$terraform apply`, `$terraform apply dev/frontend dev/backend`
-    - **`$terraform plan [targets...]`**
+        - If directory targets are omitted, applies all detected changes.
+        - Example: `$terraform apply`, `$terraform apply dev/frontend dev/backend`, `$terraform apply -target=aws_instance.web`, `$terraform apply dev/frontend -target=module.vpc -target=aws_subnet.main`
+    - **`$terraform plan [targets...] [-target=<resource>...]`**
         - Executes `terraform plan`.
-        - Example: `$terraform plan`, `$terraform plan dev/frontend`
+        - Example: `$terraform plan`, `$terraform plan dev/frontend`, `$terraform plan -target=aws_instance.web`
 - **CONDITIONS**:
-    - **Targets**: Must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to repo/workspace root).
+    - **Targets**: Directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to repo/workspace root).
+    - **-target**: Resource addresses follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`). Multiple `-target` flags can be specified.
     - **Execution User Restriction**: Users not listed in `APPLIERS` can run `plan` but `apply` is blocked.
 
 ### DriftDetection

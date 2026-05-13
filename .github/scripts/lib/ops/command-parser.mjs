@@ -2,8 +2,8 @@ function getHelpMessage() {
   return `
 ### :robot: Terraform Bot Usage
 
-- \`$terraform apply [targets...]\`: Run \`terraform apply\`
-- \`$terraform plan [targets...]\`: Run \`terraform plan\`
+- \`$terraform apply [targets...] [-target=<resource>...]\`: Run \`terraform apply\`
+- \`$terraform plan [targets...] [-target=<resource>...]\`: Run \`terraform plan\`
 - \`$terraform help\`: Show this help message.
 
 **Targets:**
@@ -11,10 +11,17 @@ function getHelpMessage() {
 - Targets must match Terraform root paths in .tfdeps.json (dirs[].path, relative to the repo root).
 - If **no targets** are provided, the bot detects changes based on the PR diff.
 
+**-target (Terraform resource targeting):**
+- Restrict plan/apply to specific Terraform resources.
+- Accepts standard Terraform resource addresses (e.g., \`aws_instance.example\`, \`module.frontend\`).
+- Multiple \`-target\` flags can be specified.
+
 **Examples:**
 - \`$terraform apply\`: Apply all changes in the PR.
 - \`$terraform plan dev/frontend\`: Plan changes in \`dev/frontend\`.
 - \`$terraform apply dev/backend dev/db\`: Apply for multiple paths.
+- \`$terraform apply -target=aws_instance.web\`: Apply only \`aws_instance.web\`.
+- \`$terraform plan dev/frontend -target=module.vpc -target=aws_subnet.main\`: Plan with resource targeting.
 `.trim();
 }
 
@@ -45,31 +52,42 @@ export function parseCommand(commentBody) {
   } else if (cmdToken === 'help') {
     return {
       command: 'help',
-      targets: [],
+      targetDirs: [],
+      tfTargets: [],
       message: getHelpMessage(),
     };
   } else {
     return null;
   }
 
-  const targets = [];
+  const targetDirs = [];
+  const tfTargets = [];
   for (let i = 2; i < args.length; i++) {
     const arg = args[i];
-    // Security: Validate target argument to prevent command injection or path traversal
-    // Allow alphanumeric, forward slash, hyphen, underscore, and dot
-    // However, explicitly disallow ".." to prevent directory traversal
-    if (!/^[\w\-\/\.]+$/.test(arg) || /\.\./.test(arg)) {
-      // Log warning or just skip/throw? 
-      // For safety, let's skip invalid targets but continue parsing valid ones, 
-      // or fail the whole command. Failing is safer to notify user.
-      return {
-        command: 'error',
-        targets: [],
-        message: `Invalid target path provided: "${arg}". Only alphanumeric characters, "-", "/", and "." are allowed. Directory traversal ".." is invalid.`
-      };
+
+    if (arg.startsWith('-target=')) {
+      const resourceAddr = arg.slice('-target='.length);
+      if (!/^[\w.\-\[\]]+$/.test(resourceAddr) || /\.\./.test(resourceAddr)) {
+        return {
+          command: 'error',
+          targetDirs: [],
+          tfTargets: [],
+          message: `Invalid -target resource address: "${resourceAddr}". Only alphanumeric characters, "-", ".", "_", "[", and "]" are allowed. Directory traversal ".." is invalid.`
+        };
+      }
+      tfTargets.push(resourceAddr);
+    } else {
+      if (!/^[\w\-\/\.]+$/.test(arg) || /\.\./.test(arg)) {
+        return {
+          command: 'error',
+          targetDirs: [],
+          tfTargets: [],
+          message: `Invalid target path provided: "${arg}". Only alphanumeric characters, "-", "/", and "." are allowed. Directory traversal ".." is invalid.`
+        };
+      }
+      targetDirs.push(arg);
     }
-    targets.push(arg);
   }
 
-  return { command, targets };
+  return { command, targetDirs, tfTargets };
 }
