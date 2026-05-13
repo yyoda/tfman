@@ -141,5 +141,12 @@ describe('lib/ops/command-parser', () => {
       assert.strictEqual(result.command, 'error');
       assert.match(result.message, /Invalid -target resource address/);
     });
+
+    it('should parse multiple space-separated -target flags', () => {
+      const result = parseCommand('$terraform plan -target aws_instance.web -target module.vpc -target aws_subnet.main');
+      assert.strictEqual(result.command, 'plan');
+      assert.deepStrictEqual(result.targetDirs, []);
+      assert.deepStrictEqual(result.tfTargets, ['aws_instance.web', 'module.vpc', 'aws_subnet.main']);
+    });
   });
 });

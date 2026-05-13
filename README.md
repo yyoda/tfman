@@ -71,6 +71,7 @@ $terraform apply environments/prod-us environments/prod-eu
 $terraform plan environments/staging
 $terraform apply -target=aws_instance.web
 $terraform apply -target aws_instance.web
+$terraform apply -target aws_instance.web -target module.vpc
 $terraform apply environments/prod-us -target=aws_instance.web -target=module.vpc
 $terraform help
 ```
