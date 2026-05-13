@@ -109,5 +109,37 @@ describe('lib/ops/command-parser', () => {
       assert.strictEqual(result.command, 'error');
       assert.match(result.message, /Invalid -target resource address/);
     });
+
+    it('should parse -target with space-separated value', () => {
+      const result = parseCommand('$terraform plan -target module.main');
+      assert.strictEqual(result.command, 'plan');
+      assert.deepStrictEqual(result.targetDirs, []);
+      assert.deepStrictEqual(result.tfTargets, ['module.main']);
+    });
+
+    it('should parse targetDirs and space-separated -target together', () => {
+      const result = parseCommand('$terraform plan environments/test1 -target module.main');
+      assert.strictEqual(result.command, 'plan');
+      assert.deepStrictEqual(result.targetDirs, ['environments/test1']);
+      assert.deepStrictEqual(result.tfTargets, ['module.main']);
+    });
+
+    it('should parse mixed -target= and -target space forms', () => {
+      const result = parseCommand('$terraform apply -target a -target=b -target c');
+      assert.strictEqual(result.command, 'apply');
+      assert.deepStrictEqual(result.tfTargets, ['a', 'b', 'c']);
+    });
+
+    it('should return error when -target has no value', () => {
+      const result = parseCommand('$terraform plan -target');
+      assert.strictEqual(result.command, 'error');
+      assert.match(result.message, /-target requires a resource address/);
+    });
+
+    it('should reject directory traversal in space-separated -target value', () => {
+      const result = parseCommand('$terraform plan -target ../../etc/passwd');
+      assert.strictEqual(result.command, 'error');
+      assert.match(result.message, /Invalid -target resource address/);
+    });
   });
 });

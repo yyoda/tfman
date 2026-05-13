@@ -33,13 +33,13 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - **`$terraform apply [targets...] [-target=<resource>...]`**
         - Executes `terraform apply`.
         - If directory targets are omitted, applies all detected changes.
-        - Example: `$terraform apply`, `$terraform apply dev/frontend dev/backend`, `$terraform apply -target=aws_instance.web`, `$terraform apply dev/frontend -target=module.vpc -target=aws_subnet.main`
+        - Example: `$terraform apply`, `$terraform apply dev/frontend dev/backend`, `$terraform apply -target=aws_instance.web`, `$terraform apply -target aws_instance.web`, `$terraform apply dev/frontend -target=module.vpc -target=aws_subnet.main`
     - **`$terraform plan [targets...] [-target=<resource>...]`**
         - Executes `terraform plan`.
-        - Example: `$terraform plan`, `$terraform plan dev/frontend`, `$terraform plan -target=aws_instance.web`
+        - Example: `$terraform plan`, `$terraform plan dev/frontend`, `$terraform plan -target=aws_instance.web`, `$terraform plan -target aws_instance.web`
 - **CONDITIONS**:
     - **Targets**: Directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to repo/workspace root).
-    - **-target**: Resource addresses follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`). Multiple `-target` flags can be specified.
+    - **-target**: Resource addresses follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`). Both `-target=<resource>` and `-target <resource>` (space-separated) forms are supported. Multiple `-target` flags can be specified.
     - **Execution User Restriction**: Users not listed in `APPLIERS` can run `plan` but `apply` is blocked.
 
 ### DriftDetection
