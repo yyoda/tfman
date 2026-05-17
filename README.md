@@ -208,6 +208,23 @@ AWS_ROLE_ARN=arn:aws:iam::<account-id>:role/<role-name>
 AWS_REGION=<region>
 ```
 
+Example `.env` for Azure (placed in `.github/env.d/<path>/.env`):
+
+```
+ARM_CLIENT_ID=<client-id>
+ARM_TENANT_ID=<tenant-id>
+ARM_SUBSCRIPTION_ID=<subscription-id>
+```
+
+For multi-subscription setups — where each `provider "azurerm"` (or `azuread`/`azapi`) block pins its own `subscription_id` via an alias — leave `ARM_SUBSCRIPTION_ID` empty and set `ARM_ALLOW_NO_SUBSCRIPTIONS=true`. This lets the `azure/login` step succeed without binding a default subscription, while Terraform selects the correct one per provider block. `ARM_ALLOW_NO_SUBSCRIPTIONS` is optional; if unset it defaults to `false`.
+
+Example `.env` for GCP (placed in `.github/env.d/<path>/.env`):
+
+```
+GCP_WORKLOAD_IDENTITY_PROVIDER=projects/<project-number>/locations/global/workloadIdentityPools/<pool-id>/providers/<provider-id>
+GCP_SERVICE_ACCOUNT=<service-account-email>
+```
+
 ### 4. Configure cloud provider authentication
 
 Use OIDC-based authentication (no long-lived credentials):
