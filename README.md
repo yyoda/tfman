@@ -181,6 +181,9 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 
 ## Adopting This in Your Repository
 
+> [!TIP]
+> If you use Claude Code (or another agent runtime that supports skills), you can skip the manual walk-through below and let the bundled **`tfman-setup`** skill drive the adoption end-to-end. See [Quick start with an AI agent](#quick-start-with-an-ai-agent).
+
 ### 1. Prerequisites
 
 - Node.js 18+ (20+ recommended)
@@ -300,6 +303,55 @@ node .github/scripts/cli/index.mjs <command> [options]
 | `operate-command --comment-body "..." --base-sha ... --head-sha ...` | Parse a PR comment command |
 
 For full option details, see [`.github/workflows/README.md`](.github/workflows/README.md).
+
+---
+
+## Quick Start with an AI Agent
+
+The repository ships an installer skill at [`.agents/skills/tfman-setup/`](.agents/skills/tfman-setup/) that an AI coding agent (Claude Code, etc.) can use to drive the 8 adoption steps for you — fetching the latest `.github/`, identifying your Terraform roots, scaffolding `.env` files for AWS/Azure/GCP, generating `.tfdeps.json`, and flagging the steps that require GitHub UI access (`APPLIERS` variable, branch protection).
+
+### Install the skill into your target repository
+
+Drop the skill into your agent's skill directory. Most setups support one of these two paths:
+
+```bash
+# Claude Code, project-scoped (recommended — only affects this repo)
+mkdir -p .claude/skills
+git clone --depth=1 https://github.com/yyoda/tfman.git /tmp/tfman-skill
+cp -R /tmp/tfman-skill/.agents/skills/tfman-setup .claude/skills/
+rm -rf /tmp/tfman-skill
+```
+
+```bash
+# Claude Code, user-scoped (available across all your repos)
+mkdir -p ~/.claude/skills
+git clone --depth=1 https://github.com/yyoda/tfman.git /tmp/tfman-skill
+cp -R /tmp/tfman-skill/.agents/skills/tfman-setup ~/.claude/skills/
+rm -rf /tmp/tfman-skill
+```
+
+Agent runtimes that read from `.agents/skills/` instead of `.claude/skills/` work the same way — adjust the destination path accordingly.
+
+### Use it
+
+Once the skill is installed, just ask the agent in natural language:
+
+```
+Install tfman into this repository.
+```
+
+```
+Update tfman from upstream.
+```
+
+The agent will detect whether this is a fresh install or an upgrade, pre-flight your environment, run through the configuration steps, and stop to confirm before any destructive or out-of-CLI action (moving Terraform roots, setting the `APPLIERS` GitHub variable, etc.).
+
+### What the skill covers
+
+- **Initial install** — all 8 steps from the manual walk-through above, with confirmation prompts at the points that need human judgment.
+- **Update from upstream** — refreshes `.github/workflows`, `.github/scripts`, and `.github/actions` from the latest `yyoda/tfman`, deliberately leaving `.github/env.d/` (your per-environment OIDC config) untouched, then re-runs `generate-deps` so `.tfdeps.json` matches the new CLI shape.
+
+The skill's source lives in [`.agents/skills/tfman-setup/SKILL.md`](.agents/skills/tfman-setup/SKILL.md) — read it if you want to know exactly what the agent will do before you give it the keys.
 
 ---
 
