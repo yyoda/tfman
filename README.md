@@ -182,7 +182,7 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 ## Adopting This in Your Repository
 
 > [!TIP]
-> If you use Claude Code (or another agent runtime that supports skills), you can skip the manual walk-through below and let the bundled **`tfman-setup`** skill drive the adoption end-to-end. See [Quick start with an AI agent](#quick-start-with-an-ai-agent).
+> If you use Claude Code (or another agent runtime that supports skills), you can skip the manual walk-through below and let the bundled **`install-tfman`** skill drive the adoption end-to-end. See [Quick start with an AI agent](#quick-start-with-an-ai-agent).
 
 ### 1. Prerequisites
 
@@ -308,29 +308,26 @@ For full option details, see [`.github/workflows/README.md`](.github/workflows/R
 
 ## Quick Start with an AI Agent
 
-The repository ships an installer skill at [`.agents/skills/tfman-setup/`](.agents/skills/tfman-setup/) that an AI coding agent (Claude Code, etc.) can use to drive the 8 adoption steps for you — fetching the latest `.github/`, identifying your Terraform roots, scaffolding `.env` files for AWS/Azure/GCP, generating `.tfdeps.json`, and flagging the steps that require GitHub UI access (`APPLIERS` variable, branch protection).
+The repository ships an installer skill at [`.agents/skills/install-tfman/`](.agents/skills/install-tfman/) that an AI coding agent (Claude Code, etc.) can run to handle the most mechanical part of adoption: cloning `yyoda/tfman` and copying its `.github/scripts/` and `.github/workflows/` into your target repository.
+
+The remaining configuration (Terraform roots, `.terraform-version`, `.env`, `.tfdeps.json`, `APPLIERS`, branch protection) stays in your hands — the skill is deliberately narrow so it never touches your Terraform code or per-environment secrets config.
 
 ### Install the skill into your target repository
 
-Drop the skill into your agent's skill directory. Most setups support one of these two paths:
+Drop the skill into your agent's skill directory. Pick the destination based on whether you want it scoped to one repo or available globally:
 
 ```bash
-# Claude Code, project-scoped (recommended — only affects this repo)
-mkdir -p .claude/skills
+# Pick one:
+DEST=.claude/skills      # project-scoped (recommended — only affects this repo)
+DEST=~/.claude/skills    # user-scoped (available across all your repos)
+
+mkdir -p "$DEST"
 git clone --depth=1 https://github.com/yyoda/tfman.git /tmp/tfman-skill
-cp -R /tmp/tfman-skill/.agents/skills/tfman-setup .claude/skills/
+cp -R /tmp/tfman-skill/.agents/skills/install-tfman "$DEST/"
 rm -rf /tmp/tfman-skill
 ```
 
-```bash
-# Claude Code, user-scoped (available across all your repos)
-mkdir -p ~/.claude/skills
-git clone --depth=1 https://github.com/yyoda/tfman.git /tmp/tfman-skill
-cp -R /tmp/tfman-skill/.agents/skills/tfman-setup ~/.claude/skills/
-rm -rf /tmp/tfman-skill
-```
-
-Agent runtimes that read from `.agents/skills/` instead of `.claude/skills/` work the same way — adjust the destination path accordingly.
+Agent runtimes that read from `.agents/skills/` instead of `.claude/skills/` work the same way — adjust `DEST` accordingly.
 
 ### Use it
 
@@ -344,14 +341,22 @@ Install tfman into this repository.
 Update tfman from upstream.
 ```
 
-The agent will detect whether this is a fresh install or an upgrade, pre-flight your environment, run through the configuration steps, and stop to confirm before any destructive or out-of-CLI action (moving Terraform roots, setting the `APPLIERS` GitHub variable, etc.).
+Both phrasings trigger the same procedure: refresh `.github/scripts/` and `.github/workflows/` from upstream. Your own workflow files survive `cp -R`'s merge behavior as long as they don't share a filename with a tfman workflow (same-named files are overwritten — review the resulting `git diff` before committing). Sibling subtrees like `.github/env.d/` are never touched, since the script doesn't copy into them.
 
-### What the skill covers
+### What the skill does (and doesn't)
 
-- **Initial install** — all 8 steps from the manual walk-through above, with confirmation prompts at the points that need human judgment.
-- **Update from upstream** — refreshes `.github/workflows`, `.github/scripts`, and `.github/actions` from the latest `yyoda/tfman`, deliberately leaving `.github/env.d/` (your per-environment OIDC config) untouched, then re-runs `generate-deps` so `.tfdeps.json` matches the new CLI shape.
+The skill **only** copies `.github/scripts/` and `.github/workflows/` from upstream — that's it. To keep its blast radius small and its behavior predictable, the following are intentionally **not** automated:
 
-The skill's source lives in [`.agents/skills/tfman-setup/SKILL.md`](.agents/skills/tfman-setup/SKILL.md) — read it if you want to know exactly what the agent will do before you give it the keys.
+- Creating or moving Terraform roots under `environments/`
+- Writing `.terraform-version` or per-environment `.env` files
+- Running `generate-deps` to produce `.tfdeps.json`
+- Setting the `APPLIERS` GitHub variable
+- Configuring branch protection / rulesets
+- Slack subscription
+
+Those steps require your judgment about your own infrastructure (which roles to trust, which version to pin, which subscriptions to bind). After the copy finishes, the agent will point you back at the steps above for everything else.
+
+The full source lives in [`.agents/skills/install-tfman/SKILL.md`](.agents/skills/install-tfman/SKILL.md) — read it if you want to know exactly what the agent will do before you hand it the keys.
 
 ---
 
