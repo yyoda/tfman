@@ -308,18 +308,11 @@ For full option details, see [`.github/workflows/README.md`](.github/workflows/R
 
 ## Quick Start with an AI Agent
 
-The repository ships a [`deploy-tfman`](.agents/skills/deploy-tfman/SKILL.md) skill at [`.agents/skills/deploy-tfman/`](.agents/skills/deploy-tfman/) that an AI coding agent (Claude Code, etc.) can run from inside a tfman checkout to open a pull request that mirrors `.github/scripts/` and `.github/workflows/` into your target repository.
+The repository ships a [`deploy-tfman`](.agents/skills/deploy-tfman/SKILL.md) skill at [`.agents/skills/deploy-tfman/`](.agents/skills/deploy-tfman/) that an AI coding agent (Claude Code, etc.) can run from inside a tfman checkout to open a pull request that mirrors `scripts` and `workflows` into your target repository.
 
 ### How to use it
 
-1. Clone the tfman repository (or work from an existing checkout):
-
-   ```bash
-   git clone https://github.com/yyoda/tfman.git
-   cd tfman
-   ```
-
-2. Ask your agent to deploy tfman to the target repository:
+1. Ask your agent to deploy tfman to the target repository:
 
    ```
    Deploy tfman to myorg/my-infra-repo.
@@ -329,24 +322,9 @@ The repository ships a [`deploy-tfman`](.agents/skills/deploy-tfman/SKILL.md) sk
    tfman の最新を myorg/my-infra-repo に PR で提案して。
    ```
 
-   The agent will clone the target, create a branch, copy `.github/scripts/` and `.github/workflows/` from the local tfman tree, and open a pull request.
+   The agent will clone the target, create a branch, copy files from the local tfman tree, and open a pull request.
 
-3. Review and merge the PR. Same-named workflow files in the target are overwritten — check the diff for any local customizations before merging.
-
-### What the skill does (and doesn't)
-
-The skill **only** copies `.github/scripts/` and `.github/workflows/` — that's it. The following are intentionally **not** automated:
-
-- Creating or moving Terraform roots under `environments/`
-- Writing `.terraform-version` or per-environment `.env` files
-- Running `generate-deps` to produce `.tfdeps.json`
-- Setting the `APPLIERS` GitHub variable
-- Configuring branch protection / rulesets
-- Slack subscription
-
-Those steps require your judgment about your own infrastructure. After the PR is merged, follow the remaining adoption steps above for everything else.
-
-The full source lives in [`.agents/skills/deploy-tfman/SKILL.md`](.agents/skills/deploy-tfman/SKILL.md).
+2. Review and merge the PR. Same-named workflow files in the target are overwritten — check the diff for any local customizations before merging.
 
 ---
 
