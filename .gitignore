@@ -2,3 +2,4 @@
 .terraform/
 node_modules/
 terraform.tfstate.*
+.agents/skills/deploy-tfman/tmp/

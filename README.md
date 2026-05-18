@@ -181,6 +181,9 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 
 ## Adopting This in Your Repository
 
+> [!TIP]
+> If you have access to a tfman checkout and an agent runtime that supports skills, you can use the bundled **`deploy-tfman`** skill to open a PR that copies the scripts and workflows into your repository automatically. See [Quick start with an AI agent](#quick-start-with-an-ai-agent).
+
 ### 1. Prerequisites
 
 - Node.js 18+ (20+ recommended)
@@ -300,6 +303,28 @@ node .github/scripts/cli/index.mjs <command> [options]
 | `operate-command --comment-body "..." --base-sha ... --head-sha ...` | Parse a PR comment command |
 
 For full option details, see [`.github/workflows/README.md`](.github/workflows/README.md).
+
+---
+
+## Quick Start with an AI Agent
+
+The repository ships a [`deploy-tfman`](.agents/skills/deploy-tfman/SKILL.md) skill at [`.agents/skills/deploy-tfman/`](.agents/skills/deploy-tfman/) that an AI coding agent (Claude Code, etc.) can run from inside a tfman checkout to open a pull request that mirrors `scripts` and `workflows` into your target repository.
+
+### How to use it
+
+1. Ask your agent to deploy tfman to the target repository:
+
+   ```
+   Deploy tfman to myorg/my-infra-repo.
+   ```
+
+   ```
+   tfman の最新を myorg/my-infra-repo に PR で提案して。
+   ```
+
+   The agent will clone the target, create a branch, copy files from the local tfman tree, and open a pull request.
+
+2. Review and merge the PR. Same-named workflow files in the target are overwritten — check the diff for any local customizations before merging.
 
 ---
 
