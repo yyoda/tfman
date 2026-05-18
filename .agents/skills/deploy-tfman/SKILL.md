@@ -7,7 +7,6 @@ description: From inside the tfman repository, open a pull request against anoth
 
 This skill rolls the **local tfman checkout** out to a different repository by opening a pull request. It is designed to be invoked from inside the tfman repository — the source files come from the working tree you already have.
 
-Companion skill: `install-tfman` (copies into CWD instead of a remote target).
 
 ## Procedure
 
