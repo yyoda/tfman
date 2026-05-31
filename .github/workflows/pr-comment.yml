@@ -52,7 +52,7 @@ jobs:
     steps:
 
       - name: Add reaction
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             github.rest.reactions.createForIssueComment({
@@ -73,15 +73,15 @@ jobs:
           echo "base_sha=$(echo $PR_DATA | jq -r .baseRefOid)" >> $GITHUB_OUTPUT
           echo "head_sha=$(echo $PR_DATA | jq -r .headRefOid)" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ steps.pr-details.outputs.ref }}
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Parse Comment and Generate Matrix
         id: set-matrix
@@ -128,7 +128,7 @@ jobs:
 
       - name: Set Pending Status
         if: steps.set-matrix.outputs.done != 'true' && steps.set-matrix.outputs.matrix != '' && fromJson(steps.set-matrix.outputs.matrix).include[0] != null
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           COMMAND: ${{ steps.set-matrix.outputs.command }}
           HEAD_SHA: ${{ steps.pr-details.outputs.head_sha }}
@@ -158,7 +158,7 @@ jobs:
         working-directory: ${{ matrix.path }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.setup.outputs.ref }}
 
@@ -176,14 +176,14 @@ jobs:
 
       - name: Configure AWS Credentials
         if: contains(matrix.providers, 'registry.terraform.io/hashicorp/aws') || contains(matrix.providers, 'registry.terraform.io/hashicorp/awscc')
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Configure Azure Credentials
         if: contains(matrix.providers, 'registry.terraform.io/hashicorp/azurerm') || contains(matrix.providers, 'registry.terraform.io/hashicorp/azuread') || contains(matrix.providers, 'registry.terraform.io/azure/azapi')
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ env.ARM_CLIENT_ID }}
           tenant-id: ${{ env.ARM_TENANT_ID }}
@@ -192,13 +192,13 @@ jobs:
 
       - name: Configure GCP Credentials
         if: contains(matrix.providers, 'registry.terraform.io/hashicorp/google')
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
 
       - name: Cache Terraform Providers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
           key: ${{ runner.os }}-tf-plugin-${{ hashFiles('**/.terraform.lock.hcl') }}
@@ -210,7 +210,7 @@ jobs:
         run: echo "version=$(cat .terraform-version)" >> $GITHUB_OUTPUT
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ steps.tf-version.outputs.version }}
           terraform_wrapper: false
@@ -263,21 +263,21 @@ jobs:
         run: |
           CLEAN_PATH=$(echo "${{ matrix.path }}" | tr '/' '-')
           COMMAND="${{ needs.setup.outputs.command }}"
-          
+
           # Determine outcome based on steps
           if [ "$COMMAND" == "plan" ]; then
             OUTCOME="${{ steps.plan.outcome }}"
           else
             OUTCOME="${{ steps.apply.outcome }}"
           fi
-          
+
           echo "{\"path\": \"${{ matrix.path }}\", \"outcome\": \"$OUTCOME\"}" > info.json
           echo "clean_path=$CLEAN_PATH" >> $GITHUB_ENV
           echo "command=$COMMAND" >> $GITHUB_ENV
 
       - name: Upload Artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.command }}-${{ env.clean_path }}
           path: |
@@ -292,17 +292,17 @@ jobs:
     if: "!cancelled() && needs.setup.result != 'skipped' && needs.setup.outputs.done != 'true'"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: ${{ needs.setup.outputs.command }}-*
           path: ${{ needs.setup.outputs.command == 'plan' && 'plans' || 'applies' }}
           merge-multiple: false
 
       - name: Update Commit Status
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           COMMAND: ${{ needs.setup.outputs.command }}
           HEAD_SHA: ${{ needs.setup.outputs.head_sha }}
@@ -322,7 +322,7 @@ jobs:
             });
 
       - name: Post Command Execution Result
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           COMMAND: ${{ needs.setup.outputs.command }}
         with:

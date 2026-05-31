@@ -57,12 +57,12 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Parse Targets and Generate Matrix
         id: set-matrix
@@ -72,7 +72,7 @@ jobs:
           # Use the select-targets command to generate the matrix json
           # Wrap in { include: ... } and minify with jq -c
           MATRIX=$(node .github/scripts/cli/index.mjs select-targets --targets "$TARGETS" | jq -c '{include: .}')
-          
+
           # Echo to stdout for logging and set as output
           echo "$MATRIX"
           {
@@ -94,7 +94,7 @@ jobs:
         working-directory: ${{ matrix.path }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Create Cache Dir
         run: mkdir -p $TF_PLUGIN_CACHE_DIR
@@ -110,14 +110,14 @@ jobs:
 
       - name: Configure AWS Credentials
         if: contains(matrix.providers, 'registry.terraform.io/hashicorp/aws') || contains(matrix.providers, 'registry.terraform.io/hashicorp/awscc')
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Configure Azure Credentials
         if: contains(matrix.providers, 'registry.terraform.io/hashicorp/azurerm') || contains(matrix.providers, 'registry.terraform.io/hashicorp/azuread') || contains(matrix.providers, 'registry.terraform.io/azure/azapi')
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ env.ARM_CLIENT_ID }}
           tenant-id: ${{ env.ARM_TENANT_ID }}
@@ -126,13 +126,13 @@ jobs:
 
       - name: Configure GCP Credentials
         if: contains(matrix.providers, 'registry.terraform.io/hashicorp/google')
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
 
       - name: Cache Terraform Providers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
           key: ${{ runner.os }}-tf-plugin-${{ hashFiles('**/.terraform.lock.hcl') }}
@@ -144,7 +144,7 @@ jobs:
         run: echo "version=$(cat .terraform-version)" >> $GITHUB_OUTPUT
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ steps.tf-version.outputs.version }}
           terraform_wrapper: false
