@@ -1,0 +1,14 @@
+# trivy.yaml — Terraform IaC misconfiguration scan config for CI.
+#
+# Informational only: findings are summarized in the CI job log and the full
+# report is uploaded as an artifact; the CI job is NEVER failed by trivy (see the
+# static-analysis steps in .github/workflows/pr-review.yml).
+#
+# This file's presence is the CI on-switch — the trivy steps skip when it is
+# absent. Scope is per changed target root (the PR-review plan matrix).
+scan:
+  scanners:
+    - misconfig
+severity:
+  - HIGH
+  - CRITICAL
