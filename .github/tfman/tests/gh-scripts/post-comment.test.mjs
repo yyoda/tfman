@@ -39,6 +39,7 @@ describe('post-comment.mjs', () => {
 
     // GitHub API mocks
     const github = {
+        paginate: mock.fn(async (fn, params) => (await fn(params)).data),
         rest: {
             issues: {
                 listComments: mock.fn(),
@@ -53,11 +54,14 @@ describe('post-comment.mjs', () => {
         
         // Reset specific mock implementations
         glob.create.mock.mockImplementation(() => globberMock);
+        github.paginate.mock.mockImplementation(async (fn, params) => (await fn(params)).data);
         
         // Clear all mock history
         core.info.mock.resetCalls();
         core.warning.mock.resetCalls();
         core.error.mock.resetCalls();
+        glob.create.mock.resetCalls();
+        github.paginate.mock.resetCalls();
         
         github.rest.issues.listComments.mock.resetCalls();
         github.rest.issues.deleteComment.mock.resetCalls();
@@ -99,6 +103,14 @@ describe('post-comment.mjs', () => {
         await postComment({ github, context, core, glob }, { mode: 'plan', deletePreviousComments: true }, { fs, path });
 
         // Assert Cleanup
+        assert.equal(github.paginate.mock.calls.length, 1);
+        assert.equal(github.paginate.mock.calls[0].arguments[0], github.rest.issues.listComments);
+        assert.deepEqual(github.paginate.mock.calls[0].arguments[1], {
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            per_page: 100,
+        });
         assert.equal(github.rest.issues.deleteComment.mock.calls.length, 1);
         assert.equal(github.rest.issues.deleteComment.mock.calls[0].arguments[0].comment_id, 1);
 
@@ -114,6 +126,53 @@ describe('post-comment.mjs', () => {
         const body = github.rest.issues.createComment.mock.calls[0].arguments[0].body;
         assert.ok(body.includes(PlanCommentBuilder.COMMENT_HEADER));
         assert.ok(body.includes('+1 add')); // From mock plan content
+    });
+
+    it('should only clean up previous plan comments in cleanupOnly mode', async () => {
+        github.rest.issues.listComments.mock.mockImplementation(async () => ({
+            data: [
+                { id: 1, user: { type: 'Bot' }, body: PlanCommentBuilder.COMMENT_HEADER },
+                { id: 2, user: { type: 'User' }, body: PlanCommentBuilder.COMMENT_HEADER },
+                { id: 3, user: { type: 'Bot' }, body: 'Other bot comment' },
+            ],
+        }));
+
+        await postComment({ github, context, core, glob }, {
+            mode: 'plan', cleanupOnly: true, deletePreviousComments: true,
+        }, { fs, path });
+
+        assert.equal(github.rest.issues.deleteComment.mock.calls.length, 1);
+        assert.equal(github.rest.issues.deleteComment.mock.calls[0].arguments[0].comment_id, 1);
+        assert.equal(glob.create.mock.calls.length, 0);
+        assert.equal(github.rest.issues.createComment.mock.calls.length, 0);
+        assert.equal(core.info.mock.calls[0].arguments[0], 'Removed previous plan comments (cleanup only).');
+    });
+
+    it('should do nothing in cleanupOnly mode when deletion is disabled', async () => {
+        await postComment({ github, context, core, glob }, {
+            mode: 'plan', cleanupOnly: true, deletePreviousComments: false,
+        }, { fs, path });
+
+        assert.equal(github.paginate.mock.calls.length, 0);
+        assert.equal(github.rest.issues.deleteComment.mock.calls.length, 0);
+        assert.equal(glob.create.mock.calls.length, 0);
+        assert.equal(github.rest.issues.createComment.mock.calls.length, 0);
+    });
+
+    it('should delete plan comments beyond the first page', async () => {
+        const comments = Array.from({ length: 35 }, (_, index) => ({
+            id: index + 1, user: { type: 'User' }, body: 'Keep me',
+        }));
+        comments[30] = { id: 31, user: { type: 'Bot' }, body: PlanCommentBuilder.COMMENT_HEADER };
+        github.paginate.mock.mockImplementation(async () => comments);
+
+        await postComment({ github, context, core, glob }, {
+            mode: 'plan', cleanupOnly: true, deletePreviousComments: true,
+        }, { fs, path });
+
+        assert.equal(github.paginate.mock.calls.length, 1);
+        assert.equal(github.rest.issues.deleteComment.mock.calls.length, 1);
+        assert.equal(github.rest.issues.deleteComment.mock.calls[0].arguments[0].comment_id, 31);
     });
 
     it('should execute Apply logic without cleanup', async () => {

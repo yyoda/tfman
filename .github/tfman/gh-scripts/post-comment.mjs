@@ -17,7 +17,8 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   const { fs = _fs, path = _path } = deps;
   const config = {
       mode: options.mode || 'plan',
-      deletePreviousComments: options.deletePreviousComments === true
+      deletePreviousComments: options.deletePreviousComments === true,
+      cleanupOnly: options.cleanupOnly === true
   };
 
   // Link to the current workflow run, where the full (untruncated) plan/apply
@@ -66,6 +67,39 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   const COMMENT_HEADER = builder.constructor.COMMENT_HEADER;
   const CONTINUED_HEADER = builder.constructor.CONTINUED_HEADER || null;
 
+  const cleanupPreviousComments = async () => {
+    if (!config.deletePreviousComments) return;
+    try {
+      const comments = await github.paginate(github.rest.issues.listComments, {
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        issue_number: context.issue.number,
+        per_page: 100,
+      });
+
+      const botComments = comments.filter(comment => 
+        comment.user.type === 'Bot' && 
+        (comment.body.includes(COMMENT_HEADER) || (CONTINUED_HEADER && comment.body.includes(CONTINUED_HEADER)))
+      );
+
+      for (const comment of botComments) {
+        await github.rest.issues.deleteComment({
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          comment_id: comment.id,
+        });
+      }
+    } catch (error) {
+      if (core) core.warning(`Failed to cleanup comments: ${error.message}`);
+    }
+  };
+
+  if (config.cleanupOnly) {
+    await cleanupPreviousComments();
+    if (core) core.info(`Removed previous ${config.mode} comments (cleanup only).`);
+    return;
+  }
+
   // 1. Collect result artifacts
   const globber = await glob.create(behavior.artifactPattern);
   const infoFiles = await globber.glob();
@@ -84,30 +118,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   }
 
   // 2. Cleanup previous comments (Controlled by flag)
-  if (config.deletePreviousComments) {
-    try {
-      const { data: comments } = await github.rest.issues.listComments({
-        owner: context.repo.owner,
-        repo: context.repo.repo,
-        issue_number: context.issue.number,
-      });
-
-      const botComments = comments.filter(comment => 
-        comment.user.type === 'Bot' && 
-        (comment.body.includes(COMMENT_HEADER) || (CONTINUED_HEADER && comment.body.includes(CONTINUED_HEADER)))
-      );
-
-      for (const comment of botComments) {
-        await github.rest.issues.deleteComment({
-          owner: context.repo.owner,
-          repo: context.repo.repo,
-          comment_id: comment.id,
-        });
-      }
-    } catch (error) {
-      if (core) core.warning(`Failed to cleanup comments: ${error.message}`);
-    }
-  }
+  await cleanupPreviousComments();
 
   // 3. Add results to Builder
   for (const infoFile of infoFiles) {

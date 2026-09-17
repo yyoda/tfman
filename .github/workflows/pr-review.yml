@@ -240,11 +240,12 @@ jobs:
   post-plan:
     needs: [detect-changes, plan]
     runs-on: ubuntu-latest
-    if: always() && needs.detect-changes.result != 'skipped' && needs.detect-changes.outputs.has-changes == 'true'
+    if: always() && needs.detect-changes.result == 'success'
     steps:
       - uses: actions/checkout@v5
 
       - name: Download Plans
+        if: needs.detect-changes.outputs.has-changes == 'true'
         uses: actions/download-artifact@v8
         with:
           pattern: plan-*
@@ -257,4 +258,5 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { default: script } = await import('${{ github.workspace }}/.github/tfman/gh-scripts/post-comment.mjs');
-            await script({github, context, core, glob}, { mode: 'plan', deletePreviousComments: true });
+            const hasChanges = '${{ needs.detect-changes.outputs.has-changes }}' === 'true';
+            await script({github, context, core, glob}, { mode: 'plan', deletePreviousComments: true, cleanupOnly: !hasChanges });
