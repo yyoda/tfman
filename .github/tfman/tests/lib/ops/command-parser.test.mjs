@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { parseCommand } from '../../../scripts/lib/ops/command-parser.mjs';
+import { parseCommand } from '../../../lib/ops/command-parser.mjs';
 
 describe('lib/ops/command-parser', () => {
 

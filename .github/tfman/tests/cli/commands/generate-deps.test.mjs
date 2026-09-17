@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { run } from '../../../scripts/cli/commands/generate-deps.mjs';
+import { run } from '../../../cli/commands/generate-deps.mjs';
 
 describe('cli/commands/generate-deps', () => {
 
