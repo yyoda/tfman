@@ -3,6 +3,25 @@ import assert from 'node:assert';
 import { PlanCommentBuilder, ApplyCommentBuilder } from '../../lib/comment-builder.mjs';
 
 describe('ApplyCommentBuilder', () => {
+
+  it('should truncate oversized summary tables with an omission row', () => {
+    const builder = new ApplyCommentBuilder();
+    const runUrl = 'https://example.invalid/r/1';
+    const paths = Array.from({ length: 300 }, (_, i) =>
+      `environments/very-long-environment-name-${String(i).padStart(3, '0')}/stack`);
+    for (const path of paths) {
+      builder.addResult(path, 'Apply complete! Resources: 1 added, 0 changed, 0 destroyed.', 'success');
+    }
+
+    const comment = builder.buildComment({ runUrl, maxCommentLength: 5000, perPathBudget: 100 });
+    assert.ok(comment.length <= 5000, `Comment length ${comment.length} should be <= 5000`);
+    assert.ok(comment.includes(ApplyCommentBuilder.COMMENT_HEADER));
+    assert.ok(comment.includes(paths[0]));
+    assert.ok(!comment.includes(paths[paths.length - 1]));
+    assert.ok(comment.includes('more paths omitted'));
+    assert.ok(comment.includes(`[workflow run summary](${runUrl})`));
+  });
+
     it('should return empty string when no results', () => {
         const builder = new ApplyCommentBuilder();
         assert.strictEqual(builder.buildComment(), '');
@@ -108,6 +127,25 @@ Apply failed.
 });
 
 describe('PlanCommentBuilder', () => {
+
+  it('should truncate oversized summary tables with an omission row', () => {
+    const builder = new PlanCommentBuilder();
+    const runUrl = 'https://example.invalid/r/1';
+    const paths = Array.from({ length: 300 }, (_, i) =>
+      `environments/very-long-environment-name-${String(i).padStart(3, '0')}/stack`);
+    for (const path of paths) {
+      builder.addResult(path, 'Plan: 1 to add, 0 to change, 0 to destroy.', 'success');
+    }
+
+    const comment = builder.buildComment({ runUrl, maxCommentLength: 5000, perPathBudget: 100 });
+    assert.ok(comment.length <= 5000, `Comment length ${comment.length} should be <= 5000`);
+    assert.ok(comment.includes(PlanCommentBuilder.COMMENT_HEADER));
+    assert.ok(comment.includes(paths[0]));
+    assert.ok(!comment.includes(paths[paths.length - 1]));
+    assert.ok(comment.includes('more paths omitted'));
+    assert.ok(comment.includes(`[workflow run summary](${runUrl})`));
+  });
+
 
   it('should include failed plan output in details', () => {
     const builder = new PlanCommentBuilder();

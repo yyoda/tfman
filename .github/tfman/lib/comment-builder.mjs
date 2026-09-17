@@ -44,10 +44,11 @@ function wrapDetails(detailBlocks, label) {
  *   1. Full inline output (no link footer) — kept whenever it fits the limit.
  *   2. Per-path truncated output + a link to the full output in the run summary.
  *   3. Summary table only + the same link, when even truncation does not fit.
- * The returned body is guaranteed to be within maxCommentLength (except for a
- * pathological summary table with thousands of paths).
+ *   4. Truncate summary rows with an omission row when the table does not fit.
+ * The returned body is guaranteed to be within maxCommentLength.
  * @param {object} params
- * @param {string} params.summary - Summary section (header + table)
+ * @param {string} params.summaryHeader - Comment header and table headings
+ * @param {string[]} params.summaryRows - Table rows, each ending with a newline
  * @param {Array<{tfPath: string, content: string, fence: string}>} params.details
  * @param {string} params.detailsLabel - <details> summary label
  * @param {string} params.linkFooter - Footer linking to the full output (may be '')
@@ -55,7 +56,9 @@ function wrapDetails(detailBlocks, label) {
  * @param {number} params.perPathBudget
  * @returns {string}
  */
-function assembleComment({ summary, details, detailsLabel, linkFooter, maxCommentLength, perPathBudget }) {
+function assembleComment({ summaryHeader, summaryRows, details, detailsLabel, linkFooter, maxCommentLength, perPathBudget }) {
+  const summary = summaryHeader + summaryRows.join('');
+
   // 1. Prefer the full, untruncated output with no extra footer — this keeps
   //    the output identical to the previous behavior whenever it fits.
   const fullBlocks = details.map(d => buildDetailBlock(d.tfPath, d.content, d.fence, Infinity));
@@ -72,8 +75,24 @@ function assembleComment({ summary, details, detailsLabel, linkFooter, maxCommen
   }
 
   // 3. Still too large (many paths): drop inline details entirely.
-  return summary + linkFooter +
-    '\n> ⚠️ Inline details were omitted because they exceed the comment size limit. See the workflow run summary for the full output.\n';
+  const note = '\n> ⚠️ Inline details were omitted because they exceed the comment size limit. See the workflow run summary for the full output.\n';
+  const summaryOnly = summary + linkFooter + note;
+  if (summaryOnly.length <= maxCommentLength) {
+    return summaryOnly;
+  }
+
+  // 4. Reserve room for the omission row before retaining each summary row.
+  const omissionRow = omitted => `| … | | ${omitted} more paths omitted — see the workflow run summary |\n`;
+  let retained = '';
+  let kept = 0;
+  for (const row of summaryRows) {
+    const length = summaryHeader.length + retained.length + row.length +
+      omissionRow(summaryRows.length - kept - 1).length + linkFooter.length + note.length;
+    if (length > maxCommentLength) break;
+    retained += row;
+    kept++;
+  }
+  return summaryHeader + retained + omissionRow(summaryRows.length - kept) + linkFooter + note;
 }
 
 export class PlanCommentBuilder {
@@ -122,12 +141,13 @@ export class PlanCommentBuilder {
 
     this.results.sort((a, b) => a.tfPath.localeCompare(b.tfPath));
 
-    let summary = `${PlanCommentBuilder.COMMENT_HEADER}\n\n| Path | Result | Change Detail |\n| :--- | :---: | :--- |\n`;
+    const summaryHeader = `${PlanCommentBuilder.COMMENT_HEADER}\n\n| Path | Result | Change Detail |\n| :--- | :---: | :--- |\n`;
+    const summaryRows = [];
     const details = [];
 
     for (const { tfPath, planContent, outcome } of this.results) {
       const stats = this._parseStats(planContent, outcome);
-      summary += `| \`${tfPath}\` | ${stats.icon} | ${stats.summary} |\n`;
+      summaryRows.push(`| \`${tfPath}\` | ${stats.icon} | ${stats.summary} |\n`);
       if (stats.hasChanges) {
         details.push({ tfPath, content: planContent, fence: 'hcl' });
       }
@@ -138,7 +158,8 @@ export class PlanCommentBuilder {
       : '';
 
     return assembleComment({
-      summary,
+      summaryHeader,
+      summaryRows,
       details,
       detailsLabel: 'Show Detailed Plans',
       linkFooter,
@@ -243,13 +264,14 @@ export class ApplyCommentBuilder {
 
     this.results.sort((a, b) => a.tfPath.localeCompare(b.tfPath));
 
-    let summary = `${ApplyCommentBuilder.COMMENT_HEADER}\n\n| Path | Outcome | Changes |\n| :--- | :---: | :--- |\n`;
+    const summaryHeader = `${ApplyCommentBuilder.COMMENT_HEADER}\n\n| Path | Outcome | Changes |\n| :--- | :---: | :--- |\n`;
+    const summaryRows = [];
     const details = [];
 
     for (const { tfPath, output, outcome } of this.results) {
       const stats = this._parseStats(output);
       const icon = outcome === 'success' ? '✅' : '❌';
-      summary += `| \`${tfPath}\` | ${icon} | ${stats} |\n`;
+      summaryRows.push(`| \`${tfPath}\` | ${icon} | ${stats} |\n`);
       details.push({ tfPath, content: output, fence: 'text' });
     }
 
@@ -258,7 +280,8 @@ export class ApplyCommentBuilder {
       : '';
 
     return assembleComment({
-      summary,
+      summaryHeader,
+      summaryRows,
       details,
       detailsLabel: 'Show Output Details',
       linkFooter,

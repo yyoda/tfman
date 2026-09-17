@@ -59,7 +59,7 @@ environments/prod-us  │ +2 to add, ~1 to change, 0 to destroy
 environments/staging  │ +2 to add, ~1 to change, 0 to destroy
 ```
 
-Collapsible details. Change counts at a glance. Large outputs split across multiple comments automatically. Infrastructure review becomes as natural as code review.
+Collapsible details. Change counts at a glance. Oversized output degrades gracefully instead of failing: details are truncated first, then summarized, with a link to the full output in the workflow run summary. Infrastructure review becomes as natural as code review.
 
 ### ChatOps — Apply from the PR Comment Thread
 
