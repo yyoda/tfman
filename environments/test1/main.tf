@@ -11,5 +11,6 @@ module "main" {
 }
 
 output "result" {
-  value = module.main
+  description = "Result of the main module"
+  value       = module.main
 }
