@@ -1,8 +1,89 @@
+// Default upper bound for a single GitHub Issue/PR comment body.
+// GitHub's hard limit is 65536 characters; we stay well under it for safety.
+export const DEFAULT_MAX_COMMENT_LENGTH = 60000;
+// Per-path budget for inline detail blocks. The full, untruncated output is
+// always available in the workflow run's Job Summary, so inline detail only
+// needs to be enough for a quick review.
+export const DEFAULT_PER_PATH_BUDGET = 12000;
+
+/**
+ * Build a single fenced detail block for one path, optionally truncating the
+ * content to a per-path budget. Pass `Infinity` as the budget to keep the full
+ * output. When truncated, the full output lives in the Job Summary.
+ * @param {string} tfPath
+ * @param {string} content
+ * @param {string} fence - Code fence language (e.g. 'hcl', 'text')
+ * @param {number} perPathBudget - Max characters of content, or Infinity for no limit
+ * @returns {string}
+ */
+function buildDetailBlock(tfPath, content, fence, perPathBudget) {
+  const header = `### 📂 \`${tfPath}\`\n\n\`\`\`${fence}\n`;
+  const footer = `\n\`\`\`\n\n`;
+  // Sanitize to avoid breaking the surrounding markdown code fence.
+  let body = content.replace(/```/g, "'''");
+  if (body.length > perPathBudget) {
+    body = body.slice(0, perPathBudget) + '\n... (truncated — see the full output in the workflow run summary)';
+  }
+  return `${header}${body}${footer}`;
+}
+
+/**
+ * Wrap detail blocks in a collapsible <details> section.
+ * @param {string[]} detailBlocks
+ * @param {string} label - Summary label for the <details> element
+ * @returns {string} '' when there are no blocks
+ */
+function wrapDetails(detailBlocks, label) {
+  if (detailBlocks.length === 0) return '';
+  return `\n<details><summary><strong>${label}</strong></summary>\n\n${detailBlocks.join('')}</details>`;
+}
+
+/**
+ * Assemble a comment with a graded fallback so that the common case is
+ * unchanged and only oversized output is degraded:
+ *   1. Full inline output (no link footer) — kept whenever it fits the limit.
+ *   2. Per-path truncated output + a link to the full output in the run summary.
+ *   3. Summary table only + the same link, when even truncation does not fit.
+ * The returned body is guaranteed to be within maxCommentLength (except for a
+ * pathological summary table with thousands of paths).
+ * @param {object} params
+ * @param {string} params.summary - Summary section (header + table)
+ * @param {Array<{tfPath: string, content: string, fence: string}>} params.details
+ * @param {string} params.detailsLabel - <details> summary label
+ * @param {string} params.linkFooter - Footer linking to the full output (may be '')
+ * @param {number} params.maxCommentLength
+ * @param {number} params.perPathBudget
+ * @returns {string}
+ */
+function assembleComment({ summary, details, detailsLabel, linkFooter, maxCommentLength, perPathBudget }) {
+  // 1. Prefer the full, untruncated output with no extra footer — this keeps
+  //    the output identical to the previous behavior whenever it fits.
+  const fullBlocks = details.map(d => buildDetailBlock(d.tfPath, d.content, d.fence, Infinity));
+  const full = summary + wrapDetails(fullBlocks, detailsLabel);
+  if (full.length <= maxCommentLength) {
+    return full;
+  }
+
+  // 2. Too large: truncate each path to the per-path budget and add the link.
+  const truncatedBlocks = details.map(d => buildDetailBlock(d.tfPath, d.content, d.fence, perPathBudget));
+  const truncated = summary + linkFooter + wrapDetails(truncatedBlocks, detailsLabel);
+  if (truncated.length <= maxCommentLength) {
+    return truncated;
+  }
+
+  // 3. Still too large (many paths): drop inline details entirely.
+  return summary + linkFooter +
+    '\n> ⚠️ Inline details were omitted because they exceed the comment size limit. See the workflow run summary for the full output.\n';
+}
+
 export class PlanCommentBuilder {
   static get COMMENT_HEADER() {
     return '## 📋 Terraform Plan Summary';
   }
 
+  // Retained only so comment cleanup can still find and delete legacy
+  // multi-part comments produced by the previous chunked implementation.
+  // Current comments are always single-body (see buildComment).
   static get CONTINUED_HEADER() {
     return '### 📋 Terraform Plan Details (Continued)';
   }
@@ -17,7 +98,6 @@ export class PlanCommentBuilder {
    * @param {string} planContent - String content of the plan output
    */
   addResult(tfPath, planContent) {
-    // Pre-processing of content can be done here if needed
     this.results.push({
       tfPath,
       planContent
@@ -25,118 +105,85 @@ export class PlanCommentBuilder {
   }
 
   /**
-   * Generate a list of chunks for the comment
-   * @param {number} maxCommentLength - Maximum length of a comment (default is approx 65536 for GitHub Issue Comment limit)
-   * @returns {string[]} Array of comment bodies
+   * Build the comment body. The full inline output is kept whenever it fits
+   * GitHub's comment size limit; only oversized output is degraded (per-path
+   * truncation, then summary-only) with a link to the full output in the run
+   * summary. See assembleComment for the graded fallback.
+   * @param {object} [options]
+   * @param {string|null} [options.runUrl] - URL of the workflow run holding the full output
+   * @param {number} [options.maxCommentLength]
+   * @param {number} [options.perPathBudget]
+   * @returns {string} Comment body ('' when there are no results)
    */
-  buildChunks(maxCommentLength = 60000) {
-    if (this.results.length === 0) return [];
+  buildComment({ runUrl = null, maxCommentLength = DEFAULT_MAX_COMMENT_LENGTH, perPathBudget = DEFAULT_PER_PATH_BUDGET } = {}) {
+    if (this.results.length === 0) return '';
 
-    // Sort by path
     this.results.sort((a, b) => a.tfPath.localeCompare(b.tfPath));
 
-    const SUMMARY_HEADER = PlanCommentBuilder.COMMENT_HEADER;
-    const CONTINUED_HEADER = '\n' + PlanCommentBuilder.CONTINUED_HEADER;
-    
-    let summaryTable = `${SUMMARY_HEADER}\n\n| Path | Result | Change Detail |\n| :--- | :---: | :--- |\n`;
-    const planDetails = [];
+    let summary = `${PlanCommentBuilder.COMMENT_HEADER}\n\n| Path | Result | Change Detail |\n| :--- | :---: | :--- |\n`;
+    const details = [];
 
-    // Generate summary and prepare details list
-    for (const res of this.results) {
-      const { tfPath, planContent } = res;
+    for (const { tfPath, planContent } of this.results) {
       const stats = this._parseStats(planContent);
-      
-      summaryTable += `| \`${tfPath}\` | ${stats.icon} | ${stats.summary} |\n`;
-      
+      summary += `| \`${tfPath}\` | ${stats.icon} | ${stats.summary} |\n`;
       if (stats.hasChanges) {
-        planDetails.push({ path: tfPath, content: planContent });
+        details.push({ tfPath, content: planContent, fence: 'hcl' });
       }
     }
 
-    if (planDetails.length === 0) return [summaryTable];
+    const linkFooter = runUrl
+      ? `\n> 📄 Full plan output is available in the [workflow run summary](${runUrl}).\n`
+      : '';
 
-    const chunks = [];
-    // Initial chunk setup
-    let currentChunk = summaryTable + '\n\n<details><summary><strong>Show Detailed Plans</strong></summary>\n\n';
-    const closingTag = '</details>';
-    // Safer buffer
-    const CHUNK_LIMIT = maxCommentLength - closingTag.length - 100; 
-
-    for (const detail of planDetails) {
-      const { path: tfPath, content } = detail;
-      const blockHeader = `### 📂 \`${tfPath}\`\n\`\`\`hcl\n`;
-      const blockFooter = `\n\`\`\`\n\n`;
-      const block = `${blockHeader}${content}${blockFooter}`;
-
-      // Check if adding this block exceeds limit
-      if (currentChunk.length + block.length > CHUNK_LIMIT) {
-        // If the block itself is huge, we might need to truncate it even for a fresh chunk
-        // But for simplicity, we first try to flush current chunk
-        currentChunk += closingTag;
-        chunks.push(currentChunk);
-
-        currentChunk = `${CONTINUED_HEADER}\n\n<details open><summary><strong>Show Detailed Plans (Continued)</strong></summary>\n\n`;
-        
-        // If it STILL doesn't fit in a fresh chunk (very large plan), truncate it
-        if (currentChunk.length + block.length > CHUNK_LIMIT) {
-           const available = CHUNK_LIMIT - currentChunk.length - blockHeader.length - blockFooter.length;
-           const truncatedContent = content.slice(0, Math.max(0, available)) + '\n... (truncated)';
-           currentChunk += `${blockHeader}${truncatedContent}${blockFooter}`;
-        } else {
-           currentChunk += block;
-        }
-      } else {
-        currentChunk += block;
-      }
-    }
-
-    if (!currentChunk.endsWith(closingTag)) {
-      currentChunk += closingTag;
-    }
-    chunks.push(currentChunk);
-
-    return chunks;
+    return assembleComment({
+      summary,
+      details,
+      detailsLabel: 'Show Detailed Plans',
+      linkFooter,
+      maxCommentLength,
+      perPathBudget
+    });
   }
 
   /**
    * Extract statistics from Plan output
-   * @param {string} content 
+   * @param {string} content
    * @returns {{icon: string, summary: string, hasChanges: boolean}}
    */
   _parseStats(content) {
     // Plan: 1 to add, 0 to change, 0 to destroy.
     // No changes.
-    
+
     if (content.includes('No changes.')) {
       return { icon: '✅', summary: 'No changes', hasChanges: false };
     }
-    
-    // Terraform 0.12+ output usually: Plan: X to add, Y to change, Z to destroy.
-    
-    // Sometimes it says "No changes. Infrastructure is up-to-date."
-    
-    let add = 0, change = 0, destroy = 0;
-    
-    // Try standard format
-    const stdMatch = content.match(/Plan: (\d+) to add, (\d+) to change, (\d+) to destroy/);
+
+    let imported = 0, add = 0, change = 0, destroy = 0;
+
+    // Try standard format. Plans that include config-driven import blocks
+    // (Terraform 1.5+) prefix the summary with "N to import, " — capture it
+    // optionally so those plans aren't misread as "no changes".
+    const stdMatch = content.match(/Plan:\s*(?:(\d+) to import, )?(\d+) to add, (\d+) to change, (\d+) to destroy/);
     if (stdMatch) {
-      add = parseInt(stdMatch[1], 10);
-      change = parseInt(stdMatch[2], 10);
-      destroy = parseInt(stdMatch[3], 10);
+      imported = stdMatch[1] ? parseInt(stdMatch[1], 10) : 0;
+      add = parseInt(stdMatch[2], 10);
+      change = parseInt(stdMatch[3], 10);
+      destroy = parseInt(stdMatch[4], 10);
     } else {
       // Fallback or error case
       if (content.includes('Error:')) {
-        return { icon: '❌', summary: 'Plan Failed', hasChanges: true }; 
+        return { icon: '❌', summary: 'Plan Failed', hasChanges: true };
       }
     }
 
     const parts = [];
+    if (imported > 0) parts.push(`↩${imported} import`);
     if (add > 0) parts.push(`+${add} add`);
     if (change > 0) parts.push(`~${change} change`);
     if (destroy > 0) parts.push(`-${destroy} destroy`);
 
-    const hasChanges = (add + change + destroy) > 0;
-    
+    const hasChanges = (imported + add + change + destroy) > 0;
+
     return {
       icon: hasChanges ? '⚠️' : '✅',
       summary: parts.join(', ') || 'No changes detected',
@@ -158,8 +205,8 @@ export class ApplyCommentBuilder {
 
   /**
    * Add an apply result
-   * @param {string} tfPath 
-   * @param {string} output 
+   * @param {string} tfPath
+   * @param {string} output
    * @param {string} outcome - 'success' or 'failure'
    */
   addResult(tfPath, output, outcome) {
@@ -171,44 +218,48 @@ export class ApplyCommentBuilder {
   }
 
   /**
-   * Build the comment body
-   * @returns {string}
+   * Build the comment body. The full inline output is kept whenever it fits
+   * GitHub's comment size limit; only oversized output is degraded (per-path
+   * truncation, then summary-only) with a link to the full output in the run
+   * summary. See assembleComment for the graded fallback.
+   * @param {object} [options]
+   * @param {string|null} [options.runUrl] - URL of the workflow run holding the full output
+   * @param {number} [options.maxCommentLength]
+   * @param {number} [options.perPathBudget]
+   * @returns {string} Comment body ('' when there are no results)
    */
-  build() {
+  buildComment({ runUrl = null, maxCommentLength = DEFAULT_MAX_COMMENT_LENGTH, perPathBudget = DEFAULT_PER_PATH_BUDGET } = {}) {
     if (this.results.length === 0) return '';
 
-    // Sort by path
     this.results.sort((a, b) => a.tfPath.localeCompare(b.tfPath));
 
-    let comment = `${ApplyCommentBuilder.COMMENT_HEADER}\n\n`;
-    comment += '| Path | Outcome | Changes |\n| :--- | :---: | :--- |\n';
+    let summary = `${ApplyCommentBuilder.COMMENT_HEADER}\n\n| Path | Outcome | Changes |\n| :--- | :---: | :--- |\n`;
+    const details = [];
 
-    for (const res of this.results) {
-      const { tfPath, output, outcome } = res;
+    for (const { tfPath, output, outcome } of this.results) {
       const stats = this._parseStats(output);
       const icon = outcome === 'success' ? '✅' : '❌';
-      
-      comment += `| \`${tfPath}\` | ${icon} | ${stats} |\n`;
+      summary += `| \`${tfPath}\` | ${icon} | ${stats} |\n`;
+      details.push({ tfPath, content: output, fence: 'text' });
     }
 
-    comment += '\n<details><summary><strong>Show Output Details</strong></summary>\n\n';
-    
-    for (const res of this.results) {
-      const { tfPath, output } = res;
-      // Sanitize output to avoid breaking markdown code blocks
-      const safeOutput = output.replace(/```/g, "'''");
-      
-      comment += `### 📂 \`${tfPath}\`\n\n\`\`\`text\n${safeOutput}\n\`\`\`\n\n`;
-    }
-    
-    comment += '</details>';
+    const linkFooter = runUrl
+      ? `\n> 📄 Full apply output is available in the [workflow run summary](${runUrl}).\n`
+      : '';
 
-    return comment;
+    return assembleComment({
+      summary,
+      details,
+      detailsLabel: 'Show Output Details',
+      linkFooter,
+      maxCommentLength,
+      perPathBudget
+    });
   }
 
   /**
    * Parse apply output to find resource changes
-   * @param {string} output 
+   * @param {string} output
    * @returns {string}
    */
   _parseStats(output) {
@@ -223,14 +274,14 @@ export class ApplyCommentBuilder {
       if (added > 0) parts.push(`+${added}`);
       if (changed > 0) parts.push(`~${changed}`);
       if (destroyed > 0) parts.push(`-${destroyed}`);
-      
+
       // If there are counts but they are all 0, it means no changes were made.
       if (parts.length === 0) return 'No changes';
       return parts.join(', ');
     }
 
     if (output.includes('Error:')) return '**Error**';
-    
+
     return '-';
   }
 }

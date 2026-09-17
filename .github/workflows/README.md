@@ -104,7 +104,7 @@ The following command is executed in the some channel. If you add a new workflow
 - **Logic Separation**: Separates complex logic (e.g., PR comment formatting, artifact aggregation) from YAML files into JavaScript modules to keep workflows clean.
 
 ### Scripts
-- `gh-scripts/post-comment.mjs`: Utility script for posting comments to Pull Requests. It handles formatting of `terraform plan` and `terraform apply` results, and aggregating reports from multiple matrix jobs.
+- `gh-scripts/post-comment.mjs`: Utility script for posting comments to Pull Requests. It handles formatting of `terraform plan` and `terraform apply` results, and aggregating reports from multiple matrix jobs. The full output is posted inline as before; only when the comment would exceed GitHub's 65536-character limit does it fall back gracefully — first truncating each path's detail (with a link to the workflow run), then to a summary-only comment. The full, untruncated output is always written to each run job's **Job Summary** (`$GITHUB_STEP_SUMMARY`), which the fallback link points to.
 
 ## GitHub Scripts CLI
 
