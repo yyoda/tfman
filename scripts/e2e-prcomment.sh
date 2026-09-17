@@ -31,7 +31,7 @@ done
 for command in gh jq git sed date sleep; do
     command -v "$command" >/dev/null || die "Required command missing: $command"
 done
-gh auth status >/dev/null 2>&1 || die 'Authenticate with gh before running this script'
+gh api user --jq .login >/dev/null 2>&1 || die 'Authenticate with gh before running this script'
 root=$(git rev-parse --show-toplevel) || die 'Run inside the repository'
 cd "$root"
 [[ -z $(git status --porcelain --untracked-files=no) ]] || die 'Tracked working tree changes must be committed or stashed first'
