@@ -153,10 +153,11 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 ├── .github/
 │   ├── env.d/             # Per-environment CI config (.env files)
 │   ├── workflows/         # GitHub Actions workflow definitions
-│   └── scripts/
+│   └── tfman/             # tfman scripts (self-contained, mirrored by deploy-tfman)
 │       ├── cli/           # Node.js CLI (generate-deps, detect-changes, …)
 │       ├── gh-scripts/    # Actions runtime scripts (comment posting)
-│       └── lib/           # Shared logic
+│       ├── lib/           # Shared logic
+│       └── tests/         # node:test suites for the above
 ├── .tfdeps.json           # Generated dependency graph (commit this)
 └── .tfdepsignore          # Ignore patterns excluded from dep scanning
 ```
@@ -240,7 +241,7 @@ Use OIDC-based authentication (no long-lived credentials):
 Run once to scan all Terraform roots and build the dependency graph:
 
 ```bash
-node .github/scripts/cli/index.mjs generate-deps
+node .github/tfman/cli/index.mjs generate-deps
 ```
 
 Commit the generated `.tfdeps.json`. Re-run whenever you add or remove an environment directory.
@@ -289,10 +290,10 @@ Prevent this by enabling **"Require branches to be up to date before merging"**:
 
 ## CLI Reference
 
-The CLI lives in `.github/scripts/cli/` and is used both by the workflows and locally.
+The CLI lives in `.github/tfman/cli/` and is used both by the workflows and locally.
 
 ```bash
-node .github/scripts/cli/index.mjs <command> [options]
+node .github/tfman/cli/index.mjs <command> [options]
 ```
 
 | Command | Description |

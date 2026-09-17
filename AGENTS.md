@@ -18,7 +18,7 @@ Agents are authorized to use or reference these commands:
 - **Validation:** `terraform validate`
 - **Formatting:** `terraform fmt -recursive`
 - **Planning:** `terraform plan` (Always notify the user of any resource destruction)
-- **Testing:** `node --test .github/tests/**/*.test.mjs` (Node.js built-in runner, not npm)
+- **Testing:** `node --test .github/tfman/tests/**/*.test.mjs` (Node.js built-in runner, not npm)
 
 # Standard Project Structure
 
@@ -110,7 +110,7 @@ Use sub-agents to offload research and parallel analysis, protecting the main co
 ## Verification Before Completion
 Do not mark a task as complete until you can prove it works.
 
-- Run tests (`node --test .github/tests/**/*.test.mjs`), confirm logs, and validate behavior.
+- Run tests (`node --test .github/tfman/tests/**/*.test.mjs`), confirm logs, and validate behavior.
 - Before finalizing, self-review the output against the Best Practices section above.
 
 ## Autonomous Bug Fixing

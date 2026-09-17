@@ -11,7 +11,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - Determines Terraform execution paths and posts the results of `terraform plan` as a comment when a PR is created or updated.
 - **BEHAVIOR**:
     - Identifies changed directories based on the diff between the base branch and the head branch.
-    - Uses scripts under `.github/scripts/cli` for change detection.
+    - Uses scripts under `.github/tfman/cli` for change detection.
     - Runs `terraform plan` in parallel for each detected directory and saves the results as artifacts.
     - Finally, collects all results from artifacts and posts them in a comment. This flow is used to consolidate reports into a single post.
     - To prevent comment clutter from new commits, old posts are deleted each time a new comment is posted.
@@ -101,7 +101,7 @@ The following command is executed in the some channel. If you add a new workflow
 
 ## GitHub Scripts (gh-scripts)
 
-`.github/scripts/gh-scripts` contains scripts designed to be executed via `actions/github-script` within GitHub Actions workflows.
+`.github/tfman/gh-scripts` contains scripts designed to be executed via `actions/github-script` within GitHub Actions workflows.
 
 ### Features
 - **Actions Runtime Dependency**: Utilizes objects provided by the Actions runtime such as `github` (Octokit), `context`, and `core`.
@@ -112,7 +112,7 @@ The following command is executed in the some channel. If you add a new workflow
 
 ## GitHub Scripts CLI
 
-A CLI tool designed to manage Terraform operations within a monorepo structure, located in `.github/scripts/cli`. It is implemented in Node.js and integrates seamlessly with GitHub Actions.
+A CLI tool designed to manage Terraform operations within a monorepo structure, located in `.github/tfman/cli`. It is implemented in Node.js and integrates seamlessly with GitHub Actions.
 
 ### Features
 
@@ -131,7 +131,7 @@ A CLI tool designed to manage Terraform operations within a monorepo structure, 
 The CLI is invoked via the `index.mjs` entry point.
 
 ```bash
-node .github/scripts/cli/index.mjs <command> [options]
+node .github/tfman/cli/index.mjs <command> [options]
 ```
 
 ### Commands
@@ -142,7 +142,7 @@ Scans all directories containing `.terraform-version` (Terraform roots) and anal
 
 **Usage:**
 ```bash
-node .github/scripts/cli/index.mjs generate-deps [--output <path>] [--ignore-file <path>] [--root <path>]
+node .github/tfman/cli/index.mjs generate-deps [--output <path>] [--ignore-file <path>] [--root <path>]
 ```
 
 - `--output`: Path to the output JSON file (Default: `.tfdeps.json` in workspace root).
@@ -157,7 +157,7 @@ Compares two Git commits (base and head) to identify changed files and maps them
 
 **Usage:**
 ```bash
-node .github/scripts/cli/index.mjs detect-changes --base <sha> --head <sha> [--deps-file <path>] [--output <path>]
+node .github/tfman/cli/index.mjs detect-changes --base <sha> --head <sha> [--deps-file <path>] [--output <path>]
 ```
 
 - `--base`: Base commit SHA.
@@ -171,7 +171,7 @@ Validates a list of target directories against the known roots in `.tfdeps.json`
 
 **Usage:**
 ```bash
-node .github/scripts/cli/index.mjs select-targets --targets "dir1 dir2" [--output <path>]
+node .github/tfman/cli/index.mjs select-targets --targets "dir1 dir2" [--output <path>]
 ```
 
 - `--targets`: Space-separated list of target directories.
@@ -183,7 +183,7 @@ Parses a PR command comment (e.g., `$terraform apply app/dev`) and prepares the 
 
 **Usage:**
 ```bash
-node .github/scripts/cli/index.mjs operate-command \
+node .github/tfman/cli/index.mjs operate-command \
   --comment-body "<body>" \
   --base-sha <sha> \
   --head-sha <sha>
@@ -212,8 +212,8 @@ node_modules
 
 ### Development
 
-Tests are located in `.github/tests`. Run tests using the node test runner.
+Tests are located in `.github/tfman/tests`. Run tests using the node test runner.
 
 ```bash
-node --test .github/tests/**/*.test.mjs
+node --test .github/tfman/tests/**/*.test.mjs
 ```

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { PlanCommentBuilder, ApplyCommentBuilder } from '../../scripts/lib/comment-builder.mjs';
+import { PlanCommentBuilder, ApplyCommentBuilder } from '../../lib/comment-builder.mjs';
 
 describe('ApplyCommentBuilder', () => {
     it('should return empty string when no results', () => {
