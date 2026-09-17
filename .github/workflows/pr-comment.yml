@@ -258,6 +258,28 @@ jobs:
           set -o pipefail
           terraform apply -auto-approve -input=false -no-color "${TARGET_FLAGS[@]}" 2>&1 | tee apply.txt
 
+      - name: Write Full Output to Job Summary
+        if: always()
+        run: |
+          COMMAND="${{ needs.setup.outputs.command }}"
+          if [ "$COMMAND" == "plan" ]; then
+            LOG_FILE="plan.txt"; FENCE="hcl"; TITLE="Plan"
+          else
+            LOG_FILE="apply.txt"; FENCE="text"; TITLE="Apply"
+          fi
+          if [ -f "$LOG_FILE" ]; then
+            {
+              echo "## 📄 Terraform ${TITLE} — \`${{ matrix.path }}\`"
+              echo ''
+              echo "\`\`\`${FENCE}"
+              # Neutralize any code fences in the output, then cap well under
+              # the ~1 MiB Job Summary per-step limit.
+              sed 's/```/~~~/g' "$LOG_FILE" | head -c 900000
+              echo ''
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Create Artifact Metadata
         if: always()
         run: |
