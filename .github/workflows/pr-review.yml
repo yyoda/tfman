@@ -38,6 +38,7 @@ jobs:
       - name: Detect Changes
         id: set-matrix
         run: |
+          set -euo pipefail
           CHANGES=$(node .github/tfman/cli/index.mjs detect-changes \
             --base ${{ github.event.pull_request.base.sha }} \
             --head ${{ github.event.pull_request.head.sha }} | jq -c '{include: .}')

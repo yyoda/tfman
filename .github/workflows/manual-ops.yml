@@ -76,6 +76,7 @@ jobs:
         env:
           TARGETS: ${{ inputs.targets }}
         run: |
+          set -euo pipefail
           # Use the select-targets command to generate the matrix json
           # Wrap in { include: ... } and minify with jq -c
           MATRIX=$(node .github/tfman/cli/index.mjs select-targets --targets "$TARGETS" | jq -c '{include: .}')
