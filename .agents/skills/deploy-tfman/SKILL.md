@@ -72,16 +72,25 @@ The timestamp suffix prevents collisions if the skill is run more than once agai
 # layout. Remove only the tfman-owned subdirectories — the target may keep
 # its own unrelated files under .github/scripts (e.g. helper shell scripts).
 git -C "$WORK_DIR" rm -r -q --ignore-unmatch \
-  .github/scripts/cli .github/scripts/lib .github/scripts/gh-scripts .github/tests
+  .github/scripts/cli .github/scripts/lib .github/scripts/gh-scripts
 mkdir -p "$WORK_DIR/.github/tfman" "$WORK_DIR/.github/workflows"
-cp -R "$SOURCE_ROOT/.github/tfman/." "$WORK_DIR/.github/tfman/"
+# Tests are not shipped — they live in tfman only. Copy every other
+# subdirectory of .github/tfman, replacing what the target has, and drop a
+# tests/ directory that an earlier sync may have left behind.
+for d in "$SOURCE_ROOT"/.github/tfman/*/; do
+  name=$(basename "$d")
+  [ "$name" = "tests" ] && continue
+  rm -rf "$WORK_DIR/.github/tfman/$name"
+  cp -R "$d" "$WORK_DIR/.github/tfman/$name"
+done
+git -C "$WORK_DIR" rm -r -q --ignore-unmatch .github/tfman/tests
 cp -R "$SOURCE_ROOT/.github/workflows/." "$WORK_DIR/.github/workflows/"
 ```
 
 ### Step 7 — Check for changes
 
 ```bash
-git -C "$WORK_DIR" diff HEAD -- .github/tfman .github/workflows .github/scripts .github/tests
+git -C "$WORK_DIR" diff HEAD -- .github/tfman .github/workflows .github/scripts
 ```
 
 If the diff is empty (target already matches the source), tell the user the target is already in sync with `tfman@$SOURCE_SHA` and stop — no PR is needed.
@@ -89,7 +98,7 @@ If the diff is empty (target already matches the source), tell the user the targ
 ### Step 8 — Commit
 
 ```bash
-git -C "$WORK_DIR" add -A .github/tfman .github/workflows .github/scripts .github/tests
+git -C "$WORK_DIR" add -A .github/tfman .github/workflows .github/scripts
 git -C "$WORK_DIR" commit -m "chore: sync tfman scripts & workflows ($SOURCE_SHA)"
 ```
 
@@ -118,7 +127,7 @@ Review notes:
 
 Echo the PR URL. Note that:
 
-- The diff covers only `.github/tfman/` and `.github/workflows/`.
+- The diff covers only `.github/tfman/` (without `tests/`, which stays in tfman) and `.github/workflows/`.
 - Same-named workflow files were overwritten — the user should skim the PR diff for clobbered customizations.
 
 ## Knobs
