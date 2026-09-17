@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { generateDependencyGraph } from '../../../scripts/lib/ops/deps-generator.mjs';
+import { generateDependencyGraph } from '../../../lib/ops/deps-generator.mjs';
 
 // Mock dependencies
 // Ideally we would mock runCommand/findTerraformRoots or use a fixture.

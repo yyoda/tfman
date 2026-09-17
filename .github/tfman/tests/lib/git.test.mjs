@@ -8,8 +8,8 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { runGitDiff } from '../../scripts/lib/git.mjs';
-import { runCommand } from '../../scripts/lib/utils.mjs';
+import { runGitDiff } from '../../lib/git.mjs';
+import { runCommand } from '../../lib/utils.mjs';
 
 describe('runGitDiff', () => {
   let repoDir;

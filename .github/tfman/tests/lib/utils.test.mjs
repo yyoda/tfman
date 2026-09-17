@@ -5,7 +5,7 @@ import { writeFile, unlink, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { runCommand, getWorkspaceRoot, loadJson } from '../../scripts/lib/utils.mjs';
+import { runCommand, getWorkspaceRoot, loadJson } from '../../lib/utils.mjs';
 
 describe('utils.mjs', () => {
 

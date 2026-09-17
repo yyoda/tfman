@@ -1,6 +1,6 @@
 ---
 name: deploy-tfman
-description: From inside the tfman repository, open a pull request against another GitHub repository that mirrors `.github/scripts` and `.github/workflows` into it. Use when the user wants to roll the *current* tfman tree out to a different repo — for prompts like "tfman を myorg/foo に PR で提案して", "tfman の最新を別リポジトリに反映する PR を作って", "open a PR to roll out tfman to owner/repo", "deploy tfman to <repo>".
+description: From inside the tfman repository, open a pull request against another GitHub repository that mirrors `.github/tfman` and `.github/workflows` into it. Use when the user wants to roll the *current* tfman tree out to a different repo — for prompts like "tfman を myorg/foo に PR で提案して", "tfman の最新を別リポジトリに反映する PR を作って", "open a PR to roll out tfman to owner/repo", "deploy tfman to <repo>".
 ---
 
 # deploy-tfman
@@ -25,7 +25,7 @@ SOURCE_ROOT="${TFMAN_SRC_DIR:-<skill-dir>/../../..}"
 Verify the source looks like a tfman checkout:
 
 ```bash
-[ -d "$SOURCE_ROOT/.github/scripts" ] && [ -d "$SOURCE_ROOT/.github/workflows" ]
+[ -d "$SOURCE_ROOT/.github/tfman" ] && [ -d "$SOURCE_ROOT/.github/workflows" ]
 ```
 
 If either directory is missing, stop and tell the user to set `TFMAN_SRC_DIR` to a valid tfman checkout.
@@ -34,7 +34,7 @@ Get the source SHA and check for uncommitted changes:
 
 ```bash
 SOURCE_SHA=$(git -C "$SOURCE_ROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown")
-git -C "$SOURCE_ROOT" status --porcelain -- .github/scripts .github/workflows
+git -C "$SOURCE_ROOT" status --porcelain -- .github/tfman .github/workflows
 ```
 
 If there are uncommitted changes, warn the user that the PR will include them even though `$SOURCE_SHA` points at the clean HEAD, then continue.
@@ -68,15 +68,18 @@ The timestamp suffix prevents collisions if the skill is run more than once agai
 ### Step 6 — Copy the files
 
 ```bash
-mkdir -p "$WORK_DIR/.github/scripts" "$WORK_DIR/.github/workflows"
-cp -R "$SOURCE_ROOT/.github/scripts/." "$WORK_DIR/.github/scripts/"
+# Targets synced before tfman moved to .github/tfman still carry the legacy
+# layout; remove it so the tree matches the source exactly.
+git -C "$WORK_DIR" rm -r -q --ignore-unmatch .github/scripts .github/tests
+mkdir -p "$WORK_DIR/.github/tfman" "$WORK_DIR/.github/workflows"
+cp -R "$SOURCE_ROOT/.github/tfman/." "$WORK_DIR/.github/tfman/"
 cp -R "$SOURCE_ROOT/.github/workflows/." "$WORK_DIR/.github/workflows/"
 ```
 
 ### Step 7 — Check for changes
 
 ```bash
-git -C "$WORK_DIR" diff -- .github/scripts .github/workflows
+git -C "$WORK_DIR" diff HEAD -- .github/tfman .github/workflows .github/scripts .github/tests
 ```
 
 If the diff is empty (target already matches the source), tell the user the target is already in sync with `tfman@$SOURCE_SHA` and stop — no PR is needed.
@@ -84,7 +87,7 @@ If the diff is empty (target already matches the source), tell the user the targ
 ### Step 8 — Commit
 
 ```bash
-git -C "$WORK_DIR" add .github/scripts .github/workflows
+git -C "$WORK_DIR" add -A .github/tfman .github/workflows .github/scripts .github/tests
 git -C "$WORK_DIR" commit -m "chore: sync tfman scripts & workflows ($SOURCE_SHA)"
 ```
 
@@ -102,7 +105,7 @@ gh pr create \
   --base "$BASE" \
   --head "$BRANCH" \
   --title "chore: sync tfman scripts & workflows ($SOURCE_SHA)" \
-  --body "Sync \`.github/scripts\` and \`.github/workflows\` from tfman@$SOURCE_SHA.
+  --body "Sync \`.github/tfman\` and \`.github/workflows\` from tfman@$SOURCE_SHA.
 
 Review notes:
 - Same-named workflow files in the target were overwritten — verify any local customizations you wanted to keep.
@@ -113,7 +116,7 @@ Review notes:
 
 Echo the PR URL. Note that:
 
-- The diff covers only `.github/scripts/` and `.github/workflows/`.
+- The diff covers only `.github/tfman/` and `.github/workflows/`.
 - Same-named workflow files were overwritten — the user should skim the PR diff for clobbered customizations.
 
 ## Knobs

@@ -71,7 +71,7 @@ jobs:
         run: |
           # Use the select-targets command to generate the matrix json
           # Wrap in { include: ... } and minify with jq -c
-          MATRIX=$(node .github/scripts/cli/index.mjs select-targets --targets "$TARGETS" | jq -c '{include: .}')
+          MATRIX=$(node .github/tfman/cli/index.mjs select-targets --targets "$TARGETS" | jq -c '{include: .}')
 
           # Echo to stdout for logging and set as output
           echo "$MATRIX"

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { run } from '../../../scripts/cli/commands/detect-changes.mjs';
+import { run } from '../../../cli/commands/detect-changes.mjs';
 
 describe('cli/commands/detect-changes', () => {
 

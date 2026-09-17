@@ -90,7 +90,13 @@ jobs:
           BASE_SHA: ${{ steps.pr-details.outputs.base_sha }}
           HEAD_SHA: ${{ steps.pr-details.outputs.head_sha }}
         run: |
-          RESULT=$(node .github/scripts/cli/index.mjs operate-command \
+          # TODO(tfman-isolation): drop this fallback once every open PR has
+          # rebased past the .github/scripts -> .github/tfman move. issue_comment
+          # workflows run from the default branch but check out the PR head, so a
+          # PR predating the move won't have .github/tfman yet.
+          CLI=".github/tfman/cli/index.mjs"
+          [ -f "$CLI" ] || CLI=".github/scripts/cli/index.mjs"
+          RESULT=$(node "$CLI" operate-command \
             --comment-body "$COMMENT_BODY" \
             --base-sha "$BASE_SHA" \
             --head-sha "$HEAD_SHA")
@@ -350,5 +356,5 @@ jobs:
         with:
           script: |
             const command = process.env.COMMAND;
-            const { default: script } = await import('${{ github.workspace }}/.github/scripts/gh-scripts/post-comment.mjs');
+            const { default: script } = await import('${{ github.workspace }}/.github/tfman/gh-scripts/post-comment.mjs');
             await script({ github, context, core, glob }, { mode: command, deletePreviousComments: command === 'plan' });
