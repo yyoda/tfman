@@ -31,4 +31,4 @@ jobs:
           ./actionlint -version
 
       - name: Run actionlint
-        run: ./actionlint -color
+        run: ./actionlint

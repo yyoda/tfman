@@ -68,7 +68,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Create Cache Dir
-        run: mkdir -p $TF_PLUGIN_CACHE_DIR
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Load .env
         run: |
@@ -112,7 +112,7 @@ jobs:
 
       - name: Read Terraform Version
         id: tf-version
-        run: echo "version=$(cat .terraform-version)" >> $GITHUB_OUTPUT
+        run: echo "version=$(cat .terraform-version)" >> "$GITHUB_OUTPUT"
         working-directory: ${{ matrix.path }}
 
       - name: Setup Terraform (Specific Version)
@@ -163,7 +163,7 @@ jobs:
         id: meta
         run: |
           CLEAN_PATH="$(echo "${{ matrix.path }}" | tr '/' '-')-$(printf '%s' "${{ matrix.path }}" | sha256sum | cut -c1-8)"
-          echo "clean_path=${CLEAN_PATH}" >> $GITHUB_OUTPUT
+          echo "clean_path=${CLEAN_PATH}" >> "$GITHUB_OUTPUT"
           echo "{\"path\": \"${{ matrix.path }}\", \"outcome\": \"${{ steps.plan.outcome == 'success' && 'success' || 'failure' }}\"}" > info.json
 
       - name: Upload Artifact

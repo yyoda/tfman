@@ -54,7 +54,7 @@ jobs:
             echo "::error::User $ACTOR does not have permission to apply. Required role: applier."
             exit 1
           fi
-          echo "roles=$ROLES" >> $GITHUB_OUTPUT
+          echo "roles=$ROLES" >> "$GITHUB_OUTPUT"
 
   setup:
     permissions:
@@ -108,7 +108,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Create Cache Dir
-        run: mkdir -p $TF_PLUGIN_CACHE_DIR
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Load .env
         run: |
@@ -152,7 +152,7 @@ jobs:
 
       - name: Read Terraform Version
         id: tf-version
-        run: echo "version=$(cat .terraform-version)" >> $GITHUB_OUTPUT
+        run: echo "version=$(cat .terraform-version)" >> "$GITHUB_OUTPUT"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4

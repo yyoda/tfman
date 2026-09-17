@@ -35,7 +35,7 @@ jobs:
           else
             ROLES='["planner"]'
           fi
-          echo "roles=$ROLES" >> $GITHUB_OUTPUT
+          echo "roles=$ROLES" >> "$GITHUB_OUTPUT"
 
   setup:
     permissions:
@@ -70,8 +70,8 @@ jobs:
         run: |
           # Get PR info (baseRefOid, headRefOid)
           PR_DATA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json baseRefOid,headRefOid)
-          echo "base_sha=$(echo $PR_DATA | jq -r .baseRefOid)" >> $GITHUB_OUTPUT
-          echo "head_sha=$(echo $PR_DATA | jq -r .headRefOid)" >> $GITHUB_OUTPUT
+          echo "base_sha=$(echo "$PR_DATA" | jq -r .baseRefOid)" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$(echo "$PR_DATA" | jq -r .headRefOid)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v5
         with:
@@ -122,14 +122,14 @@ jobs:
             DONE=true
             MESSAGE="User ${ACTOR} does not have permission to apply. Required role: applier."
           fi
-          echo "tf_targets_json=$TF_TARGETS_JSON" >> $GITHUB_OUTPUT
+          echo "tf_targets_json=$TF_TARGETS_JSON" >> "$GITHUB_OUTPUT"
           {
             echo "matrix<<EOF"
             echo "$MATRIX"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-          echo "command=$COMMAND" >> $GITHUB_OUTPUT
-          echo "done=$DONE" >> $GITHUB_OUTPUT
+          echo "command=$COMMAND" >> "$GITHUB_OUTPUT"
+          echo "done=$DONE" >> "$GITHUB_OUTPUT"
           {
             echo "message<<EOF"
             echo "$MESSAGE"
@@ -183,7 +183,7 @@ jobs:
           ref: ${{ needs.setup.outputs.head_sha }}
 
       - name: Create Cache Dir
-        run: mkdir -p $TF_PLUGIN_CACHE_DIR
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Load .env
         run: |
@@ -227,7 +227,7 @@ jobs:
 
       - name: Read Terraform Version
         id: tf-version
-        run: echo "version=$(cat .terraform-version)" >> $GITHUB_OUTPUT
+        run: echo "version=$(cat .terraform-version)" >> "$GITHUB_OUTPUT"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
@@ -315,8 +315,8 @@ jobs:
           fi
 
           echo "{\"path\": \"${{ matrix.path }}\", \"outcome\": \"$OUTCOME\"}" > info.json
-          echo "clean_path=$CLEAN_PATH" >> $GITHUB_ENV
-          echo "command=$COMMAND" >> $GITHUB_ENV
+          echo "clean_path=$CLEAN_PATH" >> "$GITHUB_ENV"
+          echo "command=$COMMAND" >> "$GITHUB_ENV"
 
       - name: Upload Artifact
         if: always()
