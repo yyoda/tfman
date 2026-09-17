@@ -13,7 +13,8 @@ export async function run(args, dependencies = {}) {
   const { base, head, 'deps-file': depsFile, output } = args;
 
   let dependencyGraph = null;
-  if (depsFile) {
+  if (depsFile === true) throw new Error('--deps-file requires a path');
+  if (depsFile !== undefined) {
       dependencyGraph = await loadJson(depsFile);
   }
 

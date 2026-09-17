@@ -57,6 +57,27 @@ describe('cli/commands/detect-changes', () => {
     assert.strictEqual(detectChangesMock.mock.callCount(), 0);
   });
 
+  it('should reject an explicitly empty deps file path', async (context) => {
+    const detectChangesMock = context.mock.fn(mockDetectChanges);
+    const loadJsonMock = context.mock.fn(mockLoadJson);
+    await assert.rejects(
+      run({ base: 'main', head: 'feature', 'deps-file': '' }, {
+        detectChanges: detectChangesMock,
+        loadJson: loadJsonMock
+      }),
+      /File not found/
+    );
+    assert.strictEqual(loadJsonMock.mock.calls[0].arguments[0], '');
+    assert.strictEqual(detectChangesMock.mock.callCount(), 0);
+  });
+
+  it('should reject a deps file flag without a path', async () => {
+    await assert.rejects(
+      run({ base: 'main', head: 'feature', 'deps-file': true }),
+      /--deps-file requires a path/
+    );
+  });
+
   it('should save output if output path is provided', async (context) => {
     const args = { base: 'main', head: 'feature', output: 'result.json' };
     const mockSave = context.mock.fn();
