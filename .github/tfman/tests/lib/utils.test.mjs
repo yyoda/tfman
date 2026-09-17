@@ -1,11 +1,11 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { writeFile, unlink, mkdtemp, rm } from 'node:fs/promises';
+import { writeFile, readFile, unlink, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { runCommand, getWorkspaceRoot, loadJson } from '../../lib/utils.mjs';
+import { runCommand, getWorkspaceRoot, loadJson, appendGithubOutput } from '../../lib/utils.mjs';
 
 describe('utils.mjs', () => {
 
@@ -87,5 +87,19 @@ describe('utils.mjs', () => {
             await unlink(invalidFile).catch(() => {});
         }
     });
+  });
+});
+
+describe('appendGithubOutput', () => {
+  it('appends single-line and multiline values and ignores a falsy file', async (t) => {
+    const cwd = await mkdtemp(join(tmpdir(), 'github-output-'));
+    t.after(() => rm(cwd, { recursive: true, force: true }));
+    const file = join(cwd, 'output');
+    await appendGithubOutput({ text: 'hello', number: 42, missing: undefined, empty: null }, file);
+    await appendGithubOutput({ message: 'first\nlast' }, file);
+    assert.strictEqual(await readFile(file, 'utf8'),
+      'text=hello\nnumber=42\nmissing=\nempty=\nmessage<<ghadelim\nfirst\nlast\nghadelim\n');
+    await appendGithubOutput({ message: 'ghadelim' }, '');
+    await assert.rejects(appendGithubOutput({ message: 'first\nghadelim\nlast' }, file), /delimiter/);
   });
 });

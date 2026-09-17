@@ -1,9 +1,25 @@
 import { detectChanges } from '../../lib/ops/change-detector.mjs';
 import { selectTargets } from '../../lib/ops/target-selector.mjs';
 import { parseCommand } from '../../lib/ops/command-parser.mjs';
-import { requireArgs } from '../../lib/utils.mjs';
+import { appendGithubOutput, requireArgs } from '../../lib/utils.mjs';
 
 export async function run(args, dependencies = {}) {
+  const result = await operate(args, dependencies);
+  if (args['github-output']) {
+    const matrix = !result.done && result.targetDirs.length > 0
+      ? JSON.stringify({ include: result.targetDirs }) : '';
+    await appendGithubOutput({
+      tf_targets_json: JSON.stringify(result.tfTargets),
+      matrix,
+      command: result.command,
+      done: String(result.done),
+      message: result.message,
+    }, args['github-output']);
+  }
+  return result;
+}
+
+async function operate(args, dependencies) {
   const {
     _detectChanges = detectChanges,
     _selectTargets = selectTargets,
@@ -47,6 +63,23 @@ export async function run(args, dependencies = {}) {
   }
 
   const { command, targetDirs: parsedTargetDirs = [], tfTargets = [] } = parsed;
+  if (args.roles !== undefined && command === 'apply') {
+    let roles;
+    try {
+      roles = JSON.parse(args.roles);
+    } catch {
+      roles = [];
+    }
+    if (!Array.isArray(roles) || !roles.includes('applier')) {
+      return {
+        command: 'apply',
+        targetDirs: [],
+        tfTargets: [],
+        message: `User ${args.actor} does not have permission to apply. Required role: applier.`,
+        done: true,
+      };
+    }
+  }
   let targetDirs = [];
 
   try {

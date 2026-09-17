@@ -12,7 +12,6 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 - **BEHAVIOR**:
     - Identifies changed directories based on the diff between the base branch and the head branch.
     - Uses scripts under `.github/tfman/cli` for change detection.
-    - Runs `terraform plan` in parallel for each detected directory and saves the results as artifacts.
     - Roots whose job fails before `terraform plan` runs (`fmt`, `init`, or `validate`) are listed as ❌ `Plan Failed` with `(Log file not found)` because no plan output exists; only failures inside `terraform plan` itself carry the captured error output, and plans that only change outputs are reported as changes rather than "No changes".
     - Finally, collects all results from artifacts and posts them in a comment. This flow is used to consolidate reports into a single post.
     - Stale plan comments are removed on every run, including when no results were produced, by scanning all comment pages. A missing plan artifact for an expected root is shown as ❌ `Plan Failed`. Pushes with zero changed Terraform roots also delete old plan comments without posting a new comment.
@@ -47,7 +46,6 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - **-target**: Resource addresses follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`, `aws_instance.web["blue"]`). Both `-target=<resource>` and `-target <resource>` (space-separated) forms are supported. Multiple `-target` flags can be specified.
     - **Execution User Restriction**: Users not listed in `APPLIERS` can run `plan` but `apply` is blocked.
     - Command parsing and target resolution run with the tfman scripts from the repository's default branch. Terraform itself runs against the PR head commit SHA resolved at the start of the run (the same SHA the commit status is reported on), so a push to the PR branch during the run cannot change what gets planned or applied. Unauthorized `apply` requests are rejected before any cloud credentials are configured.
-
     - Cancelled runs report an `error` commit status and a comment with ❌ rows for roots that produced no artifact.
 
 ### DriftDetection
@@ -208,15 +206,37 @@ node .github/tfman/cli/index.mjs operate-command \
   --head-sha <sha>
 ```
 
+- `--roles`: Optional JSON array of roles. `apply` requires the string `"applier"`; invalid JSON or a non-array is treated as no roles. Omitting this option preserves behavior without a role gate. `plan` is unaffected.
+- `--actor`: Optional login used in the permission-denied message.
+- `--github-output`: Appends the JSON fields (`command`, `done` as `true`/`false`, `message`, `tf_targets_json`, and `matrix` as `{"include":[…]}` or empty string) as step outputs to the given file.
+
 **Output contract:** the command always prints a single JSON object to stdout and exits 0, even when the comment is invalid or no targets match — the workflow reads `done` and `message` to decide whether to post a reply instead of relying on the exit code:
 
 ```json
 { "command": "plan" | "apply" | "help" | "error", "targetDirs": [...], "tfTargets": [...], "message": "...", "done": true | false }
 ```
 
-- `done: true` means there is nothing to execute (help, parse error, or no matching targets) and `message` should be posted to the PR as-is. The CLI never checks permissions; the workflow rejects unauthorised `apply` after parsing, before any Terraform code runs.
+- `done: true` means there is nothing to execute (help, parse error, denied apply, or no matching targets) and `message` should be posted to the PR as-is. The workflow resolves roles from `APPLIERS` and passes them via `--roles`/`--actor`. When `--roles` is given, the CLI rejects `apply` for non-appliers with `done: true` before selecting targets. The `run` job still re-checks roles before `terraform apply` as defense in depth.
 - Only the **first line** of the comment body is parsed; anything after the first newline is ignored.
 - A non-zero exit happens only for missing required arguments or an internal failure.
+
+#### 5. `write-result`
+
+Writes artifact metadata, a Job Summary, and artifact naming outputs for a Terraform result.
+
+```bash
+cd environments/test1
+node ../../.github/tfman/cli/index.mjs write-result \
+  --path environments/test1 --command plan --outcome success
+```
+
+- `--path`: Required Terraform root relative path.
+- `--command`: Required `plan` or `apply`; selects `plan.txt` or `apply.txt` in the working directory.
+- `--outcome`: Required string; only `success` is successful, and all other values become `failure`.
+
+The command reads the current working directory and the `GITHUB_STEP_SUMMARY` / `GITHUB_OUTPUT` environment variables directly. If the log exists and `GITHUB_STEP_SUMMARY` is non-empty, it appends a Plan/Apply heading and fenced log content capped at 900,000 bytes, with embedded triple backticks replaced by `~~~`. When `GITHUB_OUTPUT` is non-empty, it appends `clean_path` and `artifact_name`.
+
+Always writes `info.json` in the working directory with `path` and normalized `outcome`. `clean_path` replaces slashes with hyphens and appends the first eight lowercase SHA-256 hex characters of the exact path. `artifact_name` is `<command>-<clean_path>`, preserving artifact download patterns.
 
 ### Configuration Files
 

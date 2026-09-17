@@ -5,6 +5,8 @@ import { run as runSelectTargets } from './commands/select-targets.mjs';
 import { run as runGenerateDeps } from './commands/generate-deps.mjs';
 import { run as runOperateCommand } from './commands/operate-command.mjs';
 
+import { run as runWriteResult } from './commands/write-result.mjs';
+
 const args = process.argv.slice(2);
 if (args.length === 0) {
   console.error("Usage: node index.mjs <command> [options]");
@@ -62,13 +64,29 @@ async function main() {
         await runGenerateDeps(values);
         break;
       }
+      case 'write-result': {
+        const { values } = parseArgs({
+          args: commandArgs,
+          options: {
+            path: { type: 'string' },
+            command: { type: 'string' },
+            outcome: { type: 'string' }
+          },
+          strict: false
+        });
+        await runWriteResult(values);
+        break;
+      }
       case 'operate-command': {
         const { values } = parseArgs({
           args: commandArgs,
           options: {
             'comment-body': { type: 'string' },
             'base-sha': { type: 'string' },
-            'head-sha': { type: 'string' }
+            'head-sha': { type: 'string' },
+            roles: { type: 'string' },
+            actor: { type: 'string' },
+            'github-output': { type: 'string' }
           },
           strict: false
         });

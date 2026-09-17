@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { readFile, access } from 'node:fs/promises';
+import { readFile, access, appendFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 
 /**
@@ -116,4 +116,19 @@ export function requireArgs(args, requiredKeys) {
   if (missing.length > 0) {
     throw new Error(`Missing required arguments: ${missing.join(', ')}`);
   }
+}
+
+/** Append step outputs to $GITHUB_OUTPUT (or the given file). Multi-line values use heredoc syntax. */
+export async function appendGithubOutput(entries, file = process.env.GITHUB_OUTPUT) {
+  if (!file) return;
+  const output = Object.entries(entries).map(([key, value]) => {
+    const text = String(value ?? '');
+    if (text.split(/\r?\n/).includes('ghadelim')) {
+      throw new Error('GitHub output value contains the delimiter ghadelim');
+    }
+    return text.includes('\n')
+      ? `${key}<<ghadelim\n${text}\nghadelim\n`
+      : `${key}=${text}\n`;
+  }).join('');
+  await appendFile(file, output);
 }
