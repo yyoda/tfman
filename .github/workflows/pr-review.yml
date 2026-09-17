@@ -173,6 +173,66 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Setup Trivy
+        if: ${{ !cancelled() && hashFiles('trivy.yaml') != '' }}
+        uses: aquasecurity/setup-trivy@v0.3.1
+        with:
+          version: v0.69.3
+
+      - name: Trivy IaC scan (informational)
+        if: ${{ !cancelled() && hashFiles('trivy.yaml') != '' }}
+        id: trivy
+        run: |
+          trivy config . \
+            --config "${{ github.workspace }}/trivy.yaml" \
+            --skip-dirs '**/.terraform/**' \
+            --format json --output trivy-report.json \
+            --cache-dir "${{ github.workspace }}/.cache/trivy" \
+            --quiet --skip-version-check || true
+          CLEAN_PATH=$(echo "${{ matrix.path }}" | tr '/' '-')
+          echo "clean_path=${CLEAN_PATH}" >> "$GITHUB_OUTPUT"
+          if [ -f trivy-report.json ]; then
+            C=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="CRITICAL")] | length' trivy-report.json 2>/dev/null || echo 0)
+            H=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="HIGH")]     | length' trivy-report.json 2>/dev/null || echo 0)
+            {
+              echo "## 🔎 Trivy (informational) — \`${{ matrix.path }}\`"
+              echo "CRITICAL: ${C}  HIGH: ${H}  — details in the \`trivy-*\` artifact."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Trivy report
+        if: ${{ !cancelled() && hashFiles('trivy.yaml') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-${{ steps.trivy.outputs.clean_path }}
+          path: ${{ matrix.path }}/trivy-report.json
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Setup TFLint
+        if: ${{ !cancelled() && hashFiles('.tflint.hcl') != '' }}
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.63.1
+
+      - name: Cache TFLint plugins
+        if: ${{ !cancelled() && hashFiles('.tflint.hcl') != '' }}
+        uses: actions/cache@v5
+        with:
+          path: ~/.tflint.d/plugins
+          key: ${{ runner.os }}-tflint-${{ hashFiles('.tflint.hcl') }}
+
+      - name: TFLint (fail on warning+)
+        if: ${{ !cancelled() && hashFiles('.tflint.hcl') != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tflint --init --config="${{ github.workspace }}/.tflint.hcl"
+          tflint \
+            --config="${{ github.workspace }}/.tflint.hcl" \
+            --minimum-failure-severity=warning \
+            --format=compact
+
   post-plan:
     needs: [detect-changes, plan]
     runs-on: ubuntu-latest

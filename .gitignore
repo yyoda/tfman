@@ -3,3 +3,5 @@
 node_modules/
 terraform.tfstate.*
 .agents/skills/deploy-tfman/tmp/
+.cache/
+trivy-report.json
