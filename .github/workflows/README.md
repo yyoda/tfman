@@ -60,6 +60,15 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 
 ---
 
+### LintWorkflows
+- **PURPOSE**:
+    - Statically checks the workflow files themselves with [actionlint](https://github.com/rhysd/actionlint) whenever `.github/workflows/**` changes.
+- **BEHAVIOR**:
+    - Validates workflow syntax, expression types, `needs`/`outputs` wiring and action inputs, and runs `shellcheck` on every `run:` block.
+    - Fails the PR on any finding. The actionlint version is pinned in the workflow (`ACTIONLINT_VERSION`).
+
+---
+
 ### Operations & Configuration
 
 #### Execution User Restriction

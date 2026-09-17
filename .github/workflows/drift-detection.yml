@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Create Cache Dir
-        run: mkdir -p $TF_PLUGIN_CACHE_DIR
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Load .env
         run: |
