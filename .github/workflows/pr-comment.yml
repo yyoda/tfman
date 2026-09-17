@@ -9,16 +9,14 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  id-token: write
   contents: read
-  pull-requests: write
-  statuses: write
 
 env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
   authorize:
+    permissions: {}
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '$terraform')
@@ -40,6 +38,10 @@ jobs:
           echo "roles=$ROLES" >> $GITHUB_OUTPUT
 
   setup:
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
     needs: authorize
     runs-on: ubuntu-latest
     outputs:
@@ -75,8 +77,15 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ steps.pr-details.outputs.ref }}
           fetch-depth: 0
+
+      - name: Fetch PR Head
+        env:
+          PR_NUMBER: ${{ github.event.issue.number }}
+          HEAD_SHA: ${{ steps.pr-details.outputs.head_sha }}
+        run: |
+          git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
+          git cat-file -e "${HEAD_SHA}^{commit}"
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -89,7 +98,12 @@ jobs:
           COMMENT_BODY: ${{ github.event.comment.body }}
           BASE_SHA: ${{ steps.pr-details.outputs.base_sha }}
           HEAD_SHA: ${{ steps.pr-details.outputs.head_sha }}
+          ROLES: ${{ needs.authorize.outputs.roles }}
+          ACTOR: ${{ github.event.comment.user.login }}
         run: |
+          if git cat-file -e "${HEAD_SHA}:.tfdeps.json" 2>/dev/null; then
+            git show "${HEAD_SHA}:.tfdeps.json" > .tfdeps.json
+          fi
           RESULT=$(node .github/tfman/cli/index.mjs operate-command \
             --comment-body "$COMMENT_BODY" \
             --base-sha "$BASE_SHA" \
@@ -102,17 +116,22 @@ jobs:
             MATRIX=""
           fi
           TF_TARGETS_JSON=$(echo "$RESULT" | jq -c '.tfTargets // []')
+          COMMAND=$(echo "$RESULT" | jq -r '.command')
+          DONE=$(echo "$RESULT" | jq -r '.done // empty')
+          MESSAGE=$(echo "$RESULT" | jq -r '.message')
+          if [ "$COMMAND" == "apply" ] && ! echo "$ROLES" | jq -e 'any(.[]; . == "applier")' > /dev/null; then
+            MATRIX=""
+            DONE=true
+            MESSAGE="User ${ACTOR} does not have permission to apply. Required role: applier."
+          fi
           echo "tf_targets_json=$TF_TARGETS_JSON" >> $GITHUB_OUTPUT
           {
             echo "matrix<<EOF"
             echo "$MATRIX"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-          COMMAND=$(echo "$RESULT" | jq -r '.command')
           echo "command=$COMMAND" >> $GITHUB_OUTPUT
-          DONE=$(echo "$RESULT" | jq -r '.done // empty')
           echo "done=$DONE" >> $GITHUB_OUTPUT
-          MESSAGE=$(echo "$RESULT" | jq -r '.message')
           {
             echo "message<<EOF"
             echo "$MESSAGE"
@@ -145,6 +164,9 @@ jobs:
             });
 
   run:
+    permissions:
+      id-token: write
+      contents: read
     needs: [authorize, setup]
     if: needs.setup.outputs.done != 'true' && needs.setup.outputs.matrix != '' && fromJson(needs.setup.outputs.matrix).include[0] != null
     runs-on: ubuntu-latest
@@ -245,7 +267,7 @@ jobs:
           ACTOR: ${{ github.event.comment.user.login }}
           TF_TARGETS_JSON: ${{ needs.setup.outputs.tf_targets_json }}
         run: |
-          if ! echo "$ROLES" | jq -e 'contains(["applier"])' > /dev/null; then
+          if ! echo "$ROLES" | jq -e 'any(.[]; . == "applier")' > /dev/null; then
             echo "User $ACTOR does not have permission to apply. Required role: applier."
             exit 1
           fi
@@ -310,6 +332,10 @@ jobs:
           retention-days: 1
 
   post-run:
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
     needs: [setup, run]
     if: "!cancelled() && needs.setup.result != 'skipped' && needs.setup.outputs.done != 'true'"
     runs-on: ubuntu-latest
