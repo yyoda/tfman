@@ -90,7 +90,7 @@ The repository root itself is never treated as a Terraform root; a root-level `.
 When executing each job, if an `.env` file exists in `.github/env.d/<path>/`, it is automatically loaded. If it does not exist, the workflow logs a skip message and continues.
 
 #### Dependency Definition (`.tfdeps.json`)
-`DriftDetection` and parts of the change detection logic depend on the `.tfdeps.json` file, which defines the directory structure and dependencies. If you add a new Terraform directory or delete one, you must update this file.
+`DriftDetection` and parts of the change detection logic depend on the `.tfdeps.json` file, which defines the directory structure and dependencies. Regenerate it whenever a Terraform root is added, removed, or moved, whenever a root starts or stops using a local module, or whenever a root's provider set changes (`.terraform.lock.hcl`). The workflows also select cloud credentials from the recorded providers, so a stale entry can leave a root without the credentials its new provider needs.
 
 For update instructions, please refer to the **CLI Scripts** section below.
 

@@ -244,7 +244,13 @@ Run once to scan all Terraform roots and build the dependency graph:
 node .github/tfman/cli/index.mjs generate-deps
 ```
 
-Commit the generated `.tfdeps.json`. Re-run whenever you add or remove an environment directory.
+Commit the generated `.tfdeps.json`. Re-run whenever the graph inputs change:
+
+- a Terraform root is added, removed, or moved
+- a root starts or stops using a local module (any `module` block whose `source` points inside the repository)
+- a root's provider set changes (a provider is added to or removed from `.terraform.lock.hcl`)
+
+Change detection and cloud authentication read this file, so a stale graph means a changed module may not trigger its consumers, or a root may run without the credentials its new provider needs.
 
 > [!NOTE]
 > `generate-deps` uses `terraform modules -json` (Terraform 1.10+). For roots pinned to an older Terraform version, it falls back to the `.terraform/modules/modules.json` manifest written by `terraform init`, so run `terraform init` in those roots first. If module or provider extraction fails for any root, the command exits non-zero and does not write a partial `.tfdeps.json`.
