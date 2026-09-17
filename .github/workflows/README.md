@@ -155,6 +155,8 @@ node .github/tfman/cli/index.mjs generate-deps [--output <path>] [--ignore-file 
 
 **Note:** `generate-deps` uses `terraform modules -json` (Terraform 1.10+). For roots pinned to an older Terraform version, it falls back to the `.terraform/modules/modules.json` manifest written by `terraform init`, so run `terraform init` in those roots first. If module or provider extraction fails for any root, the command exits non-zero and does not write a partial `.tfdeps.json`.
 
+**Side effects:** for every root that has no `.terraform/` directory, the command runs `terraform init -backend=false -input=false` in that root, which downloads providers and modules and may take a while on first run. Roots that already have a `.terraform/` directory are used as-is; if that directory is stale (e.g. a module `source` changed but `init` was not re-run), delete it or run `terraform init` in that root before regenerating.
+
 #### 2. `detect-changes`
 
 Compares two Git commits (base and head) to identify changed files and maps them to affected Terraform roots using the dependency graph.
@@ -167,7 +169,7 @@ node .github/tfman/cli/index.mjs detect-changes --base <sha> --head <sha> [--dep
 - `--base`: Base commit SHA.
 - `--head`: Head commit SHA.
 - `--deps-file`: Path to the dependency graph file (Default: `.tfdeps.json` in the workspace root). If a path is given explicitly and cannot be read, the command exits with an error instead of falling back to the default.
-- `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints JSON to stdout.
+- `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints the bare array (`[{ "path": ..., "providers": [...] }, ...]`) to stdout without the `include` wrapper, so callers that pipe stdout into a matrix must wrap it themselves (the workflows do this with `jq '{include: .}'`). Any failure exits non-zero with the error on stderr.
 
 #### 3. `select-targets`
 
@@ -179,7 +181,7 @@ node .github/tfman/cli/index.mjs select-targets --targets "dir1 dir2" [--output 
 ```
 
 - `--targets`: Space-separated list of target directories.
-- `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints JSON to stdout.
+- `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints the bare array (`[{ "path": ..., "providers": [...] }, ...]`) to stdout without the `include` wrapper, so callers that pipe stdout into a matrix must wrap it themselves (the workflows do this with `jq '{include: .}'`). Any failure exits non-zero with the error on stderr.
 
 #### 4. `operate-command`
 
@@ -192,6 +194,16 @@ node .github/tfman/cli/index.mjs operate-command \
   --base-sha <sha> \
   --head-sha <sha>
 ```
+
+**Output contract:** the command always prints a single JSON object to stdout and exits 0, even when the comment is invalid or no targets match — the workflow reads `done` and `message` to decide whether to post a reply instead of relying on the exit code:
+
+```json
+{ "command": "plan" | "apply" | "help" | "error", "targetDirs": [...], "tfTargets": [...], "message": "...", "done": true | false }
+```
+
+- `done: true` means there is nothing to execute (help, parse error, unauthorized, or no matching targets) and `message` should be posted to the PR as-is.
+- Only the **first line** of the comment body is parsed; anything after the first newline is ignored.
+- A non-zero exit happens only for missing required arguments or an internal failure.
 
 ### Configuration Files
 
@@ -206,6 +218,8 @@ Dependency scanning ignore rules.
 - Format: whitespace-separated patterns. **Recommended:** one pattern per line.
 - Blank lines are ignored.
 - Lines starting with `#` are treated as comments.
+- Patterns are **not** globs (`*` and `?` have no special meaning). A pattern matches a directory when it equals the directory's name at any depth (`node_modules` skips every `node_modules/`), or when it equals or is a path prefix of the directory's path relative to the workspace root (`envs/legacy` skips `envs/legacy/` and everything under it, but not `envs/legacy-v2/`).
+- Matched directories are skipped entirely, including any Terraform roots inside them.
 
 Example:
 
