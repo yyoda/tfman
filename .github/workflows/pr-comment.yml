@@ -48,7 +48,6 @@ jobs:
       command: ${{ steps.set-matrix.outputs.command }}
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       tf_targets_json: ${{ steps.set-matrix.outputs.tf_targets_json }}
-      ref: ${{ steps.pr-details.outputs.ref }}
       head_sha: ${{ steps.pr-details.outputs.head_sha }}
       done: ${{ steps.set-matrix.outputs.done }}
     steps:
@@ -69,9 +68,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Get PR info (headRefName, baseRefOid, headRefOid)
-          PR_DATA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json headRefName,baseRefOid,headRefOid)
-          echo "ref=$(echo $PR_DATA | jq -r .headRefName)" >> $GITHUB_OUTPUT
+          # Get PR info (baseRefOid, headRefOid)
+          PR_DATA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json baseRefOid,headRefOid)
           echo "base_sha=$(echo $PR_DATA | jq -r .baseRefOid)" >> $GITHUB_OUTPUT
           echo "head_sha=$(echo $PR_DATA | jq -r .headRefOid)" >> $GITHUB_OUTPUT
 
@@ -182,7 +180,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.setup.outputs.ref }}
+          ref: ${{ needs.setup.outputs.head_sha }}
 
       - name: Create Cache Dir
         run: mkdir -p $TF_PLUGIN_CACHE_DIR
