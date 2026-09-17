@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateDependencyGraph } from '../../../lib/ops/deps-generator.mjs';
+import { generateDependencyGraph, findTerraformRoots } from '../../../lib/ops/deps-generator.mjs';
 
 const modulesJson = JSON.stringify({ Modules: [
   { Key: '', Source: '', Dir: '.' },
@@ -47,6 +47,16 @@ async function analyze(t, { modules = modulesJson, manifest, lockfile = true, sc
 }
 
 describe('lib/ops/deps-generator', () => {
+  it('excludes the workspace root while including nested roots', async t => {
+    const workspace = await mkdtemp(join(tmpdir(), 'tfman-deps-'));
+    t.after(() => rm(workspace, { recursive: true, force: true }));
+    await mkdir(join(workspace, 'env/a/sub'), { recursive: true });
+    for (const dir of ['', 'env/a', 'env/a/sub']) {
+      await writeFile(join(workspace, dir, '.terraform-version'), '1.5.7\n');
+    }
+    assert.deepEqual(await findTerraformRoots(workspace, new Set()), ['env/a', 'env/a/sub']);
+  });
+
   it('a. extracts modules and lockfile providers', async t => {
     const result = await analyze(t);
     assert.equal(result.status, 'success');

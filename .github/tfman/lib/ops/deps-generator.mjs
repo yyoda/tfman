@@ -65,7 +65,11 @@ export async function findTerraformRoots(root, ignorePatterns) {
          }
       } else if (entry.name === '.terraform-version') {
         const relRoot = relative(root, dir);
-        roots.push(relRoot);
+        if (relRoot === '') {
+          logger.info('[skip] .terraform-version at workspace root (tool version pin, not a Terraform root)');
+        } else {
+          roots.push(relRoot);
+        }
       }
     }
   }

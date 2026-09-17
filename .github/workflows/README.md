@@ -84,6 +84,8 @@ User authorization is managed via the `APPLIERS` GitHub Actions repository varia
 #### Version Management
 A `.terraform-version` file must exist in all working directories.
 
+The repository root itself is never treated as a Terraform root; a root-level `.terraform-version` only pins the tool version. Nested roots are supported: a changed file is attributed to the deepest root that contains it. A local module that lives inside another root still triggers every root that consumes it.
+
 #### Optional Environment Variables (`.env`)
 When executing each job, if an `.env` file exists in `.github/env.d/<path>/`, it is automatically loaded. If it does not exist, the workflow logs a skip message and continues.
 
