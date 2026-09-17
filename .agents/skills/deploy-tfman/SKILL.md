@@ -69,8 +69,10 @@ The timestamp suffix prevents collisions if the skill is run more than once agai
 
 ```bash
 # Targets synced before tfman moved to .github/tfman still carry the legacy
-# layout; remove it so the tree matches the source exactly.
-git -C "$WORK_DIR" rm -r -q --ignore-unmatch .github/scripts .github/tests
+# layout. Remove only the tfman-owned subdirectories — the target may keep
+# its own unrelated files under .github/scripts (e.g. helper shell scripts).
+git -C "$WORK_DIR" rm -r -q --ignore-unmatch \
+  .github/scripts/cli .github/scripts/lib .github/scripts/gh-scripts .github/tests
 mkdir -p "$WORK_DIR/.github/tfman" "$WORK_DIR/.github/workflows"
 cp -R "$SOURCE_ROOT/.github/tfman/." "$WORK_DIR/.github/tfman/"
 cp -R "$SOURCE_ROOT/.github/workflows/." "$WORK_DIR/.github/workflows/"
