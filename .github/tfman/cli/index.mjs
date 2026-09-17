@@ -70,10 +70,7 @@ async function main() {
           options: {
             path: { type: 'string' },
             command: { type: 'string' },
-            outcome: { type: 'string' },
-            'summary-file': { type: 'string' },
-            'github-output': { type: 'string' },
-            cwd: { type: 'string' }
+            outcome: { type: 'string' }
           },
           strict: false
         });

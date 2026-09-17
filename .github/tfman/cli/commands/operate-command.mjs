@@ -1,22 +1,20 @@
-import { appendFile } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
 import { detectChanges } from '../../lib/ops/change-detector.mjs';
 import { selectTargets } from '../../lib/ops/target-selector.mjs';
 import { parseCommand } from '../../lib/ops/command-parser.mjs';
-import { requireArgs } from '../../lib/utils.mjs';
+import { appendGithubOutput, requireArgs } from '../../lib/utils.mjs';
 
 export async function run(args, dependencies = {}) {
   const result = await operate(args, dependencies);
   if (args['github-output']) {
-    const delimiter = `ghadelim_${randomBytes(16).toString('hex')}`;
     const matrix = !result.done && result.targetDirs.length > 0
       ? JSON.stringify({ include: result.targetDirs }) : '';
-    await appendFile(args['github-output'],
-      `tf_targets_json=${JSON.stringify(result.tfTargets)}\n` +
-      `matrix<<${delimiter}\n${matrix}\n${delimiter}\n` +
-      `command=${result.command}\n` +
-      `done=${result.done ? 'true' : ''}\n` +
-      `message<<${delimiter}\n${result.message}\n${delimiter}\n`);
+    await appendGithubOutput({
+      tf_targets_json: JSON.stringify(result.tfTargets),
+      matrix,
+      command: result.command,
+      done: String(result.done),
+      message: result.message,
+    }, args['github-output']);
   }
   return result;
 }

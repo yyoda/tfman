@@ -38,18 +38,17 @@ describe('lib/ops/result-writer', () => {
     const githubOutput = join(cwd, 'output');
     await fs.writeFile(summaryFile, 'existing\n');
     for (const outcome of ['cancelled', 'skipped', 'failure', 'success']) {
-      const result = await writeResult({ cwd, path: 'env/x', command: 'plan', outcome, summaryFile, githubOutput });
-      assert.strictEqual(result.logExists, false);
+      await writeResult({ cwd, path: 'env/x', command: 'plan', outcome, summaryFile, githubOutput });
       assert.strictEqual(await fs.readFile(join(cwd, 'info.json'), 'utf8'),
         JSON.stringify({ path: 'env/x', outcome: outcome === 'success' ? 'success' : 'failure' }) + '\n');
     }
     assert.strictEqual(await fs.readFile(summaryFile, 'utf8'), 'existing\n');
     await fs.writeFile(join(cwd, 'plan.txt'), '```test');
     const result = await writeResult({ cwd, path: 'env/x', command: 'plan', outcome: 'success', summaryFile, githubOutput });
-    assert.deepStrictEqual(result, { cleanPath: artifactSlug('env/x'), artifactName: `plan-${artifactSlug('env/x')}`, logExists: true });
+    assert.deepStrictEqual(result, { cleanPath: artifactSlug('env/x'), artifactName: `plan-${artifactSlug('env/x')}` });
     assert.strictEqual(await fs.readFile(summaryFile, 'utf8'), 'existing\n' + renderSummary({ path: 'env/x', command: 'plan', log: '```test' }));
     assert.strictEqual(await fs.readFile(githubOutput, 'utf8'), `clean_path=${result.cleanPath}\nartifact_name=${result.artifactName}\n`.repeat(5));
     await fs.writeFile(join(cwd, 'apply.txt'), 'applied');
-    assert.strictEqual((await writeResult({ cwd, path: 'env/x', command: 'apply', outcome: 'success', summaryFile: '', githubOutput: '' })).logExists, true);
+    assert.deepStrictEqual(await writeResult({ cwd, path: 'env/x', command: 'apply', outcome: 'success', summaryFile: '', githubOutput: '' }), { cleanPath: artifactSlug('env/x'), artifactName: `apply-${artifactSlug('env/x')}` });
   });
 });

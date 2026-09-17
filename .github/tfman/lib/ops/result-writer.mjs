@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { join } from 'node:path';
+import { appendGithubOutput, exists } from '../utils.mjs';
 
 export function artifactSlug(path) {
   return `${path.replaceAll('/', '-')}-${createHash('sha256').update(path).digest('hex').slice(0, 8)}`;
@@ -19,27 +20,23 @@ export function renderSummary({ path, command, log }) {
   return `## 📄 Terraform ${title} — \`${path}\`\n\n\`\`\`${fence}\n${content}\n\`\`\`\n`;
 }
 
-export async function writeResult({ cwd, path, command, outcome, summaryFile, githubOutput, fs: filesystem = fs }) {
+export async function writeResult({ cwd, path, command, outcome, summaryFile, githubOutput }) {
   const cleanPath = artifactSlug(path);
   const artifactName = `${command}-${cleanPath}`;
-  await filesystem.writeFile(join(cwd, 'info.json'), JSON.stringify({
+  await fs.writeFile(join(cwd, 'info.json'), JSON.stringify({
     path,
     outcome: outcome === 'success' ? 'success' : 'failure',
   }) + '\n');
 
-  let log;
-  let logExists = false;
-  try {
-    log = await filesystem.readFile(join(cwd, `${command}.txt`), 'utf8');
-    logExists = true;
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+  const logPath = join(cwd, `${command}.txt`);
+  if (await exists(logPath)) {
+    const log = await fs.readFile(logPath, 'utf8');
+    if (summaryFile) {
+      await fs.appendFile(summaryFile, renderSummary({ path, command, log }));
+    }
   }
-  if (logExists && typeof summaryFile === 'string' && summaryFile !== '') {
-    await filesystem.appendFile(summaryFile, renderSummary({ path, command, log }));
+  if (githubOutput) {
+    await appendGithubOutput({ clean_path: cleanPath, artifact_name: artifactName }, githubOutput);
   }
-  if (typeof githubOutput === 'string' && githubOutput !== '') {
-    await filesystem.appendFile(githubOutput, `clean_path=${cleanPath}\nartifact_name=${artifactName}\n`);
-  }
-  return { cleanPath, artifactName, logExists };
+  return { cleanPath, artifactName };
 }
