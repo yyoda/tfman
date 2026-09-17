@@ -67,6 +67,18 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 
 ---
 
+### Testing the workflows
+
+Workflow testing has three layers:
+
+- Unit tests: `cd .github/tfman && node --test "tests/**/*.test.mjs"`.
+- Static checks: run `actionlint`; LintWorkflows also runs it in CI.
+- End-to-end tests: run `bash scripts/e2e-prcomment.sh` locally from a checkout with no tracked changes, an `origin` remote, and authenticated `gh`. The script requires only Bash, `gh`, `jq`, `git`, `sed`, and `date`. It creates a temporary branch and draft PR on the current repository, exercises PRReview plans, ignored comments, PRComment plans, early cancellation, apply, and a broken formatting fixture, then posts a results table and closes the PR. It restores the original local branch and deletes the local test branch. The fixtures under `environments/` exist for this testing; `test1` and `test2` use only null/random providers and need no cloud credentials. Authorized apply requires the developer's login in `APPLIERS` and changes the fixture state.
+
+The e2e script uses the developer's local `gh` authentication because PRs and comments created by Actions with `GITHUB_TOKEN` do not trigger the corresponding `pull_request`/`issue_comment` workflows. Run it without concurrent PRComment activity: issue-comment runs use the default branch, so it selects the newest run after each command across the repository. Early cancellation is timing-sensitive and fails its assertions if an artifact is already produced.
+
+Options: `--base <branch>` (default `main`), `--keep` (retain the PR and remote branch), `--skip-apply` (skip authorized apply), `--timeout <seconds>` (per wait, default `900`), and `-h`/`--help`. The opt-in `--toggle-appliers` tests unauthorized apply by temporarily changing the repository's `APPLIERS` variable to `[]`; the original value is restored after the scenario and by an exit trap on failure. This option requires access to read and write that variable. The script polls using Bash's clock without an external sleep dependency, so waiting consumes CPU time.
+
 ### Operations & Configuration
 
 #### Execution User Restriction
