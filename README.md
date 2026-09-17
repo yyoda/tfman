@@ -247,7 +247,7 @@ node .github/tfman/cli/index.mjs generate-deps
 Commit the generated `.tfdeps.json`. Re-run whenever you add or remove an environment directory.
 
 > [!NOTE]
-> If you encounter errors during dependency generation, run `terraform init` in each Terraform root directory before running this command.
+> `generate-deps` uses `terraform modules -json` (Terraform 1.10+). For roots pinned to an older Terraform version, it falls back to the `.terraform/modules/modules.json` manifest written by `terraform init`, so run `terraform init` in those roots first. If module or provider extraction fails for any root, the command exits non-zero and does not write a partial `.tfdeps.json`.
 
 > [!TIP]
 > For reproducible provider selection (and better CI caching), commit each root's `.terraform.lock.hcl` after running `terraform init`.

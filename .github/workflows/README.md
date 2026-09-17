@@ -150,7 +150,7 @@ node .github/tfman/cli/index.mjs generate-deps [--output <path>] [--ignore-file 
 - `--ignore-file`: Path to the ignore file (Default: `.tfdepsignore` in workspace root).
 - `--root`: Path to the root directory to scan (Default: workspace root).
 
-**Note:** If you encounter errors during dependency generation, run `terraform init` in each Terraform root directory before running this command.
+**Note:** `generate-deps` uses `terraform modules -json` (Terraform 1.10+). For roots pinned to an older Terraform version, it falls back to the `.terraform/modules/modules.json` manifest written by `terraform init`, so run `terraform init` in those roots first. If module or provider extraction fails for any root, the command exits non-zero and does not write a partial `.tfdeps.json`.
 
 #### 2. `detect-changes`
 

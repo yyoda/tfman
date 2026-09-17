@@ -128,18 +128,26 @@ export async function resolveLocalModule(rootAbs, source, dirPath, workspaceRoot
  * @param {string} workspaceRoot - Absolute path to the workspace root.
  * @param {string} repoName - Name of the repository.
  * @param {string[]} logs - Array to accumulate logs/errors.
- * @returns {Promise<string[]>} - List of local module paths used.
+ * @returns {Promise<string[]|null>} - List of local module paths used, or null on failure.
  */
-async function extractModules(rootAbs, workspaceRoot, repoName, logs) {
+async function extractModules(rootAbs, workspaceRoot, repoName, logs, runCommand) {
   try {
-    const { stdout } = await runCommand('terraform', ['modules', '-json'], { cwd: rootAbs });
+    let stdout;
+    try {
+      ({ stdout } = await runCommand('terraform', ['modules', '-json'], { cwd: rootAbs }));
+    } catch (error) {
+      const manifest = join(rootAbs, '.terraform', 'modules', 'modules.json');
+      if (!(await exists(manifest))) throw error;
+      stdout = await readFile(manifest, 'utf-8');
+      logs.push(`ℹ️ 'terraform modules' unavailable in ${rootAbs}; used .terraform/modules/modules.json`);
+    }
 
     let data;
     try {
         data = JSON.parse(stdout);
     } catch (e) {
         logs.push(`❌ JSON decode error (modules) in ${rootAbs}: ${e.message}`);
-        return [];
+        return null;
     }
 
     const modulesRaw = data.Modules || data.modules || [];
@@ -161,7 +169,7 @@ async function extractModules(rootAbs, workspaceRoot, repoName, logs) {
     return Array.from(modulesSet).sort();
   } catch (error) {
     logs.push(`❌ 'terraform modules' failed in ${rootAbs}: ${error.message}`);
-    return [];
+    return null;
   }
 }
 
@@ -169,9 +177,9 @@ async function extractModules(rootAbs, workspaceRoot, repoName, logs) {
  * Extract providers used in a Terraform root directory.
  * @param {string} rootAbs - Absolute path to the Terraform root.
  * @param {string[]} logs - Array to accumulate logs/errors.
- * @returns {Promise<string[]>} - List of provider names.
+ * @returns {Promise<string[]|null>} - List of provider names, or null on failure.
  */
-async function extractProviders(rootAbs, logs) {
+async function extractProviders(rootAbs, logs, runCommand) {
   const lockFile = join(rootAbs, '.terraform.lock.hcl');
   if (await exists(lockFile)) {
     const content = await readFile(lockFile, 'utf-8');
@@ -192,7 +200,7 @@ async function extractProviders(rootAbs, logs) {
     return Object.keys(schemas).sort();
   } catch (error) {
     logs.push(`❌ Failed to get providers schema in ${rootAbs}: ${error.message}`);
-    return [];
+    return null;
   }
 }
 
@@ -203,7 +211,7 @@ async function extractProviders(rootAbs, logs) {
  * @param {string} repoName - Repository name.
  * @returns {Promise<object>} - Analysis result.
  */
-async function analyzeRoot(rootRelPath, workspaceRoot, repoName) {
+async function analyzeRoot(rootRelPath, workspaceRoot, repoName, runCommand) {
   const rootAbs = resolve(workspaceRoot, rootRelPath);
   const result = {
     root: rootRelPath,
@@ -230,12 +238,13 @@ async function analyzeRoot(rootRelPath, workspaceRoot, repoName) {
   }
 
   logger.info(`[${rootRelPath}] Extracting modules...`);
-  const modules = await extractModules(rootAbs, workspaceRoot, repoName, result.logs);
+  const modules = await extractModules(rootAbs, workspaceRoot, repoName, result.logs, runCommand);
   logger.info(`[${rootRelPath}] Extracting providers...`);
-  const providers = await extractProviders(rootAbs, result.logs);
+  const providers = await extractProviders(rootAbs, result.logs, runCommand);
 
-  result.modules = modules;
-  result.providers = providers;
+  if (modules === null || providers === null) result.status = 'error';
+  result.modules = modules ?? [];
+  result.providers = providers ?? [];
 
   return result;
 }
@@ -246,15 +255,16 @@ async function analyzeRoot(rootRelPath, workspaceRoot, repoName) {
  * @param {string[]} ignorePatterns - List of glob patterns to ignore.
  * @returns {Promise<object>} - { results: Array<AnalysisResult>, roots: string[] }
  */
-export async function generateDependencyGraph(workspaceRoot, ignorePatterns) {
-  const repoName = await getRepoName(workspaceRoot);
+export async function generateDependencyGraph(workspaceRoot, ignorePatterns, dependencies = {}) {
+  const { runCommand: executeCommand = runCommand, getRepoName: resolveRepoName = getRepoName } = dependencies;
+  const repoName = await resolveRepoName(workspaceRoot);
   const roots = await findTerraformRoots(workspaceRoot, ignorePatterns);
 
   logger.info(`Found ${roots.length} Terraform roots. Starting analysis...`);
 
   // Running in parallel might be heavy if there are many roots (init runs concurrent)
   // But for now, let's keep it parallel as per original implementation logic (implied).
-  const promises = roots.map(r => analyzeRoot(r, workspaceRoot, repoName));
+  const promises = roots.map(r => analyzeRoot(r, workspaceRoot, repoName, executeCommand));
   const results = await Promise.all(promises);
 
   return { results, roots };
