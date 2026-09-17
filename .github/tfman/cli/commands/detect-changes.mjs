@@ -14,11 +14,7 @@ export async function run(args, dependencies = {}) {
 
   let dependencyGraph = null;
   if (depsFile) {
-      try {
-          dependencyGraph = await loadJson(depsFile);
-      } catch (error) {
-          console.warn(`Warning: Could not load dependency graph from ${depsFile}`, error.message);
-      }
+      dependencyGraph = await loadJson(depsFile);
   }
 
   const result = await detectChanges(base, head, dependencyGraph);

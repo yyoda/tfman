@@ -166,7 +166,7 @@ node .github/tfman/cli/index.mjs detect-changes --base <sha> --head <sha> [--dep
 
 - `--base`: Base commit SHA.
 - `--head`: Head commit SHA.
-- `--deps-file`: Path to the dependency graph file (Default: `.tfdeps.json`).
+- `--deps-file`: Path to the dependency graph file (Default: `.tfdeps.json` in the workspace root). If a path is given explicitly and cannot be read, the command exits with an error instead of falling back to the default.
 - `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints JSON to stdout.
 
 #### 3. `select-targets`
