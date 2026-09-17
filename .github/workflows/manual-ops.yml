@@ -44,7 +44,7 @@ jobs:
           ACTOR: ${{ github.actor }}
           APPLIERS: ${{ vars.APPLIERS }}
         run: |
-          if echo "$APPLIERS" | jq -e --arg actor "$ACTOR" 'contains([$actor])' > /dev/null 2>&1; then
+          if echo "$APPLIERS" | jq -e --arg actor "$ACTOR" 'any(.[]; . == $actor)' > /dev/null 2>&1; then
             ROLES='["applier"]'
           else
             ROLES='["planner"]'
