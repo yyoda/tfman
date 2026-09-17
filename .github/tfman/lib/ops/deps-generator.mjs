@@ -80,6 +80,8 @@ export async function findTerraformRoots(root, ignorePatterns) {
 
 /**
  * Resolves a local module path relative to the workspace root.
+ * Git sources are local only when the repository name matches exactly and no ref pins them.
+ * Modules installed under .terraform/ are not treated as local dependencies.
  * @param {string} rootAbs - The absolute path of the root module.
  * @param {string} source - The source string from the module definition.
  * @param {string} dirPath - The directory path of the module (from terraform modules json).
@@ -90,11 +92,14 @@ export async function findTerraformRoots(root, ignorePatterns) {
 export async function resolveLocalModule(rootAbs, source, dirPath, workspaceRoot, repoName) {
   let candidatePath = null;
 
-  // 1. git:: source pointing to the current repository
-  if (source.startsWith('git::') && source.includes('//') && repoName && source.includes(repoName)) {
-    const parts = source.split('//');
-    // Extract path part, ignoring query parameters like ?ref=...
-    const pathPart = parts[parts.length - 1].split('?')[0];
+  // 1. Git source pointing to the current repository
+  if (source.startsWith('git::') || source.startsWith('github.com/')) {
+    const parts = source.replace(/^git::/, '').split('//');
+    if (parts.length < 2) return null;
+    const [pathPart, ...queryParts] = parts[parts.length - 1].split('?');
+    if (queryParts.join('?').includes('ref=')) return null;
+    const sourceRepoName = parts[parts.length - 2].replace(/\.git$/, '').split(/[/:]/).pop();
+    if (!repoName || sourceRepoName !== repoName) return null;
     candidatePath = resolve(workspaceRoot, pathPart);
   }
 
@@ -110,6 +115,7 @@ export async function resolveLocalModule(rootAbs, source, dirPath, workspaceRoot
       const cleanSource = source.split('//').join('/');
       candidatePath = resolve(rootAbs, cleanSource);
     }
+    if (candidatePath && resolve(candidatePath).split(/[\\/]/).includes('.terraform')) return null;
   }
 
   if (candidatePath && (await exists(candidatePath))) {

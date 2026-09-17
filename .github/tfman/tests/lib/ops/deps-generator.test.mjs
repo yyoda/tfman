@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateDependencyGraph, findTerraformRoots } from '../../../lib/ops/deps-generator.mjs';
+import { generateDependencyGraph, findTerraformRoots, resolveLocalModule } from '../../../lib/ops/deps-generator.mjs';
 
 const modulesJson = JSON.stringify({ Modules: [
   { Key: '', Source: '', Dir: '.' },
@@ -45,6 +45,39 @@ async function analyze(t, { modules = modulesJson, manifest, lockfile = true, sc
   assert.equal(results.length, 1);
   return results[0];
 }
+
+describe('resolveLocalModule', () => {
+  const accepted = [
+    'git::https://github.com/org/tfman.git//modules/vpc',
+    'git::https://github.com/org/tfman//modules/vpc',
+    'git::ssh://git@github.com/org/tfman.git//modules/vpc',
+    'git::git@github.com:org/tfman.git//modules/vpc',
+    'github.com/org/tfman//modules/vpc',
+    '../../modules/vpc'
+  ];
+  const rejected = [
+    'git::https://github.com/org/tfman-tools.git//modules/vpc',
+    'git::https://github.com/org/xtfman.git//modules/vpc',
+    'git::https://github.com/tfman/other.git//modules/vpc',
+    'git::https://github.com/org/tfman.git//modules/vpc?ref=v1.2.0',
+    'git::https://github.com/org/other.git//modules/vpc',
+    'terraform-aws-modules/vpc/aws'
+  ];
+
+  for (const [sources, expected] of [[accepted, 'modules/vpc'], [rejected, null]]) {
+    for (const source of sources) {
+      it(`${expected === null ? 'rejects' : 'accepts'} ${source}`, async t => {
+        const workspace = await mkdtemp(join(tmpdir(), 'tfman-deps-'));
+        t.after(() => rm(workspace, { recursive: true, force: true }));
+        const rootAbs = join(workspace, 'env/a');
+        await mkdir(join(workspace, 'modules/vpc'), { recursive: true });
+        await mkdir(join(rootAbs, '.terraform/modules/vpc'), { recursive: true });
+        const dirPath = source === '../../modules/vpc' ? '' : '.terraform/modules/vpc';
+        assert.equal(await resolveLocalModule(rootAbs, source, dirPath, workspace, 'tfman'), expected);
+      });
+    }
+  }
+});
 
 describe('lib/ops/deps-generator', () => {
   it('excludes the workspace root while including nested roots', async t => {
