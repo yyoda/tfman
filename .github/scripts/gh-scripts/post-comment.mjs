@@ -16,9 +16,16 @@ import { PlanCommentBuilder, ApplyCommentBuilder } from '../lib/comment-builder.
 export default async ({ github, context, core, glob }, options = {}, deps = {}) => {
   const { fs = _fs, path = _path } = deps;
   const config = {
-      mode: options.mode || 'plan', 
+      mode: options.mode || 'plan',
       deletePreviousComments: options.deletePreviousComments === true
   };
+
+  // Link to the current workflow run, where the full (untruncated) plan/apply
+  // output is written to the Job Summary. Inline comment detail is truncated,
+  // so this link is how reviewers reach the complete output.
+  const runUrl = context.runId
+    ? `${context.serverUrl || 'https://github.com'}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+    : null;
 
   const behaviors = {
     plan: {
@@ -27,7 +34,10 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       builder: {
         factory: () => new PlanCommentBuilder(),
         add: (builder, path, content, _) => builder.addResult(path, content),
-        build: (builder) => builder.buildChunks()
+        build: (builder) => {
+          const body = builder.buildComment({ runUrl });
+          return body ? [body] : [];
+        }
       }
     },
     apply: {
@@ -37,7 +47,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
         factory: () => new ApplyCommentBuilder(),
         add: (builder, path, content, info) => builder.addResult(path, content, info.outcome),
         build: (builder) => {
-          const body = builder.build();
+          const body = builder.buildComment({ runUrl });
           return body ? [body] : [];
         }
       }

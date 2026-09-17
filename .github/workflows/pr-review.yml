@@ -140,6 +140,22 @@ jobs:
           # Save plan to text for comment
           terraform show -no-color tfplan > plan.txt
 
+      - name: Write Full Plan to Job Summary
+        if: always()
+        run: |
+          if [ -f plan.txt ]; then
+            {
+              echo "## 📄 Terraform Plan — \`${{ matrix.path }}\`"
+              echo ''
+              echo '```hcl'
+              # Neutralize any code fences in the output, then cap well under
+              # the ~1 MiB Job Summary per-step limit.
+              sed 's/```/~~~/g' plan.txt | head -c 900000
+              echo ''
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Create Artifact Metadata
         id: meta
         run: |
