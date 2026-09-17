@@ -209,11 +209,3 @@ Example:
 .terraform
 node_modules
 ```
-
-### Development
-
-Tests are located in `.github/tfman/tests`. Run tests using the node test runner.
-
-```bash
-node --test .github/tfman/tests/**/*.test.mjs
-```
