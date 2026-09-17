@@ -38,7 +38,7 @@ jobs:
       - name: Detect Changes
         id: set-matrix
         run: |
-          CHANGES=$(node .github/scripts/cli/index.mjs detect-changes \
+          CHANGES=$(node .github/tfman/cli/index.mjs detect-changes \
             --base ${{ github.event.pull_request.base.sha }} \
             --head ${{ github.event.pull_request.head.sha }} | jq -c '{include: .}')
           echo "$CHANGES" | jq .
@@ -252,5 +252,5 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const { default: script } = await import('${{ github.workspace }}/.github/scripts/gh-scripts/post-comment.mjs');
+            const { default: script } = await import('${{ github.workspace }}/.github/tfman/gh-scripts/post-comment.mjs');
             await script({github, context, core, glob}, { mode: 'plan', deletePreviousComments: true });

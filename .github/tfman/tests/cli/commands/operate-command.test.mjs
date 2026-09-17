@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { run } from '../../../scripts/cli/commands/operate-command.mjs';
+import { run } from '../../../cli/commands/operate-command.mjs';
 
 describe('cli/commands/operate-command', () => {
 

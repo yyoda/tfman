@@ -1,7 +1,7 @@
 import { describe, it, mock, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { PlanCommentBuilder, ApplyCommentBuilder } from '../../scripts/lib/comment-builder.mjs';
-import postComment from '../../scripts/gh-scripts/post-comment.mjs';
+import { PlanCommentBuilder, ApplyCommentBuilder } from '../../lib/comment-builder.mjs';
+import postComment from '../../gh-scripts/post-comment.mjs';
 
 // Setup Mock for fs and path
 const fs = {
