@@ -159,9 +159,9 @@ describe('post-comment.mjs', () => {
         // Assert comment contains fallback message (which is handled inside post-comment.mjs logic)
         // '(Log file not found)' is passed to builder
         const body = github.rest.issues.createComment.mock.calls[0].arguments[0].body;
-        // PlanCommentBuilder might not show file content directly in summary table unless mocked differently, 
-        // but let's check if it builds successfully with empty/fallback content.
         assert.ok(body.includes('missing/log'));
+        assert.ok(body.includes('❌'));
+        assert.ok(body.includes('Plan Failed'));
     });
 
     it('should handle no artifacts found case', async () => {
@@ -174,7 +174,39 @@ describe('post-comment.mjs', () => {
         assert.match(core.info.mock.calls[0].arguments[0], /No plan results found/);
         assert.equal(github.rest.issues.createComment.mock.calls.length, 1);
         const body = github.rest.issues.createComment.mock.calls[0].arguments[0].body;
-        assert.ok(body.includes('No changes were detected for this run.'));
+        assert.ok(body.includes('No plan results were produced for this run.'));
+        assert.ok(!body.includes('No changes were detected'));
+    });
+
+    it('should include failed plan outcome and error output', async () => {
+        glob.create.mock.mockImplementation(async () => globberMock);
+        globberMock.glob.mock.mockImplementation(async () => ['plans/fail/info.json']);
+        fs.readFileSync.mock.mockImplementation((filepath) => {
+            if (filepath.endsWith('info.json')) return JSON.stringify({ path: 'env/fail', outcome: 'failure' });
+            return 'Error: init failed';
+        });
+        fs.existsSync.mock.mockImplementation(() => true);
+
+        await postComment({ github, context, core, glob }, { mode: 'plan' }, { fs, path });
+
+        const body = github.rest.issues.createComment.mock.calls[0].arguments[0].body;
+        assert.ok(body.includes('| `env/fail` | ❌ | Plan Failed |'));
+        assert.ok(body.includes('Error: init failed'));
+    });
+
+    it('should default apply outcome to success when the log exists', async () => {
+        glob.create.mock.mockImplementation(async () => globberMock);
+        globberMock.glob.mock.mockImplementation(async () => ['applies/default/info.json']);
+        fs.readFileSync.mock.mockImplementation((filepath) => {
+            if (filepath.endsWith('info.json')) return JSON.stringify({ path: 'env/default' });
+            return 'Apply complete! Resources: 1 added, 0 changed, 0 destroyed.';
+        });
+        fs.existsSync.mock.mockImplementation(() => true);
+
+        await postComment({ github, context, core, glob }, { mode: 'apply' }, { fs, path });
+
+        const body = github.rest.issues.createComment.mock.calls[0].arguments[0].body;
+        assert.ok(body.includes('| `env/default` | ✅ | +1 |'));
     });
 
 });

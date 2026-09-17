@@ -134,8 +134,9 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
-          # Generate plan binary
-          terraform plan -input=false -out=tfplan
+          set -o pipefail
+          # Keep the raw output (including errors) as plan.txt until the canonical rendering replaces it
+          terraform plan -input=false -no-color -out=tfplan 2>&1 | tee plan.txt
           # Display with colors in logs
           terraform show tfplan
           # Save plan to text for comment
@@ -158,13 +159,15 @@ jobs:
           fi
 
       - name: Create Artifact Metadata
+        if: always()
         id: meta
         run: |
           CLEAN_PATH=$(echo "${{ matrix.path }}" | tr '/' '-')
           echo "clean_path=${CLEAN_PATH}" >> $GITHUB_OUTPUT
-          echo "{\"path\": \"${{ matrix.path }}\"}" > info.json
+          echo "{\"path\": \"${{ matrix.path }}\", \"outcome\": \"${{ steps.plan.outcome == 'success' && 'success' || 'failure' }}\"}" > info.json
 
       - name: Upload Artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: plan-${{ steps.meta.outputs.clean_path }}

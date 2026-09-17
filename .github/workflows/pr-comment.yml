@@ -250,8 +250,9 @@ jobs:
               TARGET_FLAGS+=("-target=$addr")
             done < <(echo "$TF_TARGETS_JSON" | jq -r '.[]')
           fi
-          # Generate plan binary
-          terraform plan -input=false -out=tfplan "${TARGET_FLAGS[@]}"
+          set -o pipefail
+          # Keep the raw output (including errors) as plan.txt until the canonical rendering replaces it
+          terraform plan -input=false -no-color -out=tfplan "${TARGET_FLAGS[@]}" 2>&1 | tee plan.txt
           # Display with color in logs
           terraform show tfplan
           # Save plain text for comment

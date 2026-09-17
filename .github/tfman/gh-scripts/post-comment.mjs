@@ -33,7 +33,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       artifactPattern: 'plans/**/info.json',
       builder: {
         factory: () => new PlanCommentBuilder(),
-        add: (builder, path, content, _) => builder.addResult(path, content),
+        add: (builder, path, content, outcome) => builder.addResult(path, content, outcome),
         build: (builder) => {
           const body = builder.buildComment({ runUrl });
           return body ? [body] : [];
@@ -45,7 +45,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       artifactPattern: 'applies/**/info.json',
       builder: {
         factory: () => new ApplyCommentBuilder(),
-        add: (builder, path, content, info) => builder.addResult(path, content, info.outcome),
+        add: (builder, path, content, outcome) => builder.addResult(path, content, outcome),
         build: (builder) => {
           const body = builder.buildComment({ runUrl });
           return body ? [body] : [];
@@ -72,7 +72,8 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
 
   if (infoFiles.length === 0) {
     if (core) core.info(`No ${config.mode} results found.`);
-    const message = `### Terraform ${config.mode === 'plan' ? 'Plan' : 'Apply'} Result\n\nNo changes were detected for this run.`;
+    const message = `### Terraform ${config.mode === 'plan' ? 'Plan' : 'Apply'} Result\n\nNo ${config.mode} results were produced for this run. The ${config.mode} jobs may have failed before producing any output — check the workflow run for details.` +
+      (runUrl ? `\n\n> 📄 [Workflow run](${runUrl})` : '');
     await github.rest.issues.createComment({
         owner: context.repo.owner,
         repo: context.repo.repo,
@@ -115,12 +116,12 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       const dir = path.dirname(infoFile);
       const logPath = path.join(dir, behavior.logFile);
       
-      const content = fs.existsSync(logPath) 
-        ? fs.readFileSync(logPath, 'utf8') 
-        : '(Log file not found)';
+      const logExists = fs.existsSync(logPath);
+      const content = logExists ? fs.readFileSync(logPath, 'utf8') : '(Log file not found)';
+      const outcome = info.outcome ?? (logExists ? 'success' : 'failure');
       
       // Use the builder definition add method
-      behavior.builder.add(builder, info.path, content, info);
+      behavior.builder.add(builder, info.path, content, outcome);
 
     } catch (error) {
       if (core) core.error(`Error processing ${infoFile}: ${error.message}`);

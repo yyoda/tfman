@@ -96,11 +96,13 @@ export class PlanCommentBuilder {
    * Add a plan result
    * @param {string} tfPath - Path to the Terraform configuration
    * @param {string} planContent - String content of the plan output
+   * @param {string} [outcome='success'] - Plan step outcome
    */
-  addResult(tfPath, planContent) {
+  addResult(tfPath, planContent, outcome = 'success') {
     this.results.push({
       tfPath,
-      planContent
+      planContent,
+      outcome
     });
   }
 
@@ -123,8 +125,8 @@ export class PlanCommentBuilder {
     let summary = `${PlanCommentBuilder.COMMENT_HEADER}\n\n| Path | Result | Change Detail |\n| :--- | :---: | :--- |\n`;
     const details = [];
 
-    for (const { tfPath, planContent } of this.results) {
-      const stats = this._parseStats(planContent);
+    for (const { tfPath, planContent, outcome } of this.results) {
+      const stats = this._parseStats(planContent, outcome);
       summary += `| \`${tfPath}\` | ${stats.icon} | ${stats.summary} |\n`;
       if (stats.hasChanges) {
         details.push({ tfPath, content: planContent, fence: 'hcl' });
@@ -148,11 +150,16 @@ export class PlanCommentBuilder {
   /**
    * Extract statistics from Plan output
    * @param {string} content
+   * @param {string} [outcome='success'] - Plan step outcome
    * @returns {{icon: string, summary: string, hasChanges: boolean}}
    */
-  _parseStats(content) {
+  _parseStats(content, outcome = 'success') {
     // Plan: 1 to add, 0 to change, 0 to destroy.
     // No changes.
+
+    if (outcome !== 'success') {
+      return { icon: '❌', summary: 'Plan Failed', hasChanges: true };
+    }
 
     if (content.includes('No changes.')) {
       return { icon: '✅', summary: 'No changes', hasChanges: false };
@@ -182,7 +189,10 @@ export class PlanCommentBuilder {
     if (change > 0) parts.push(`~${change} change`);
     if (destroy > 0) parts.push(`-${destroy} destroy`);
 
-    const hasChanges = (imported + add + change + destroy) > 0;
+    const outputsChanged = content.includes('Changes to Outputs:');
+    if (outputsChanged) parts.push('outputs changed');
+
+    const hasChanges = (imported + add + change + destroy) > 0 || outputsChanged;
 
     return {
       icon: hasChanges ? '⚠️' : '✅',

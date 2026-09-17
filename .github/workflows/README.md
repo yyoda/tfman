@@ -13,6 +13,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - Identifies changed directories based on the diff between the base branch and the head branch.
     - Uses scripts under `.github/tfman/cli` for change detection.
     - Runs `terraform plan` in parallel for each detected directory and saves the results as artifacts.
+    - Roots whose plan job fails (including `fmt`, `init`, or `validate` failures) are still listed in the comment as ❌ `Plan Failed` with the captured error output, and plans that only change outputs are reported as changes rather than "No changes".
     - Finally, collects all results from artifacts and posts them in a comment. This flow is used to consolidate reports into a single post.
     - To prevent comment clutter from new commits, old posts are deleted each time a new comment is posted.
 - **STATIC ANALYSIS** (steps appended to the `plan` job; per changed target, same scope as the plan):

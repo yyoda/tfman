@@ -109,6 +109,47 @@ Apply failed.
 
 describe('PlanCommentBuilder', () => {
 
+  it('should include failed plan output in details', () => {
+    const builder = new PlanCommentBuilder();
+    builder.addResult('env/a', 'Error: something broke', 'failure');
+    const comment = builder.buildComment();
+    assert.ok(comment.includes('| `env/a` | ❌ | Plan Failed |'));
+    assert.ok(comment.includes('<details>'));
+    assert.ok(comment.includes('Error: something broke'));
+  });
+
+  it('should report missing plan output as failure', () => {
+    const builder = new PlanCommentBuilder();
+    builder.addResult('env/b', '(Log file not found)', 'failure');
+    const comment = builder.buildComment();
+    assert.ok(comment.includes('| `env/b` | ❌ | Plan Failed |'));
+    assert.ok(!comment.includes('No changes detected'));
+  });
+
+  it('should report output-only changes with details', () => {
+    const builder = new PlanCommentBuilder();
+    builder.addResult('env/outputs', `Changes to Outputs:
+  + endpoint = "https://example.invalid"
+
+You can apply this plan to save these new output values to the Terraform state, without changing any real infrastructure.`);
+    const comment = builder.buildComment();
+    assert.ok(comment.includes('| `env/outputs` | ⚠️ | outputs changed |'));
+    assert.ok(comment.includes('<details>'));
+    assert.ok(!comment.includes('No changes detected'));
+  });
+
+  it('should combine resource and output changes', () => {
+    const builder = new PlanCommentBuilder();
+    builder.addResult('env/both', 'Plan: 1 to add, 0 to change, 0 to destroy.\nChanges to Outputs:');
+    assert.ok(builder.buildComment().includes('+1 add, outputs changed'));
+  });
+
+  it('should default omitted outcome to success', () => {
+    const builder = new PlanCommentBuilder();
+    builder.addResult('env/default', 'Plan: 1 to add, 0 to change, 0 to destroy.');
+    assert.ok(builder.buildComment().includes('| `env/default` | ⚠️ | +1 add |'));
+  });
+
   it('No changes: omits the details block', () => {
     const builder = new PlanCommentBuilder();
     builder.addResult('path/to/module-1', 'No changes. Infrastructure is up-to-date.');
