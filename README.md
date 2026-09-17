@@ -78,7 +78,7 @@ $terraform help
 
 The pipeline parses the command, validates the targets, checks permissions, executes the operation, and posts the result — all in the same thread. Full audit trail in the PR history.
 
-Note: directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to the repository root). Resource addresses for `-target` follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`). Both `-target=<resource>` and `-target <resource>` (space-separated) forms are supported.
+Note: directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to the repository root). Resource addresses for `-target` follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`, `aws_instance.web["blue"]`). Both `-target=<resource>` and `-target <resource>` (space-separated) forms are supported.
 
 ### Role-Based Access Control — Not Everyone Should Apply
 
