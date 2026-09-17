@@ -288,3 +288,18 @@ Plan: 2 to import, 4 to add, 11 to change, 1 to destroy.
     assert.strictEqual(builder.buildComment(), '');
   });
 });
+
+it('reports output changes even when an output contains No changes.', () => {
+  const builder = new PlanCommentBuilder();
+  builder.addResult('env/outputs', 'Changes to Outputs:\n  + message = "No changes."', 'success');
+  const comment = builder.buildComment();
+  assert.ok(comment.includes('| `env/outputs` | ⚠️ | outputs changed |'));
+  assert.ok(comment.includes('<details>'));
+  assert.ok(comment.includes('message = "No changes."'));
+});
+
+it('prioritizes a Plan summary over a No changes line', () => {
+  const builder = new PlanCommentBuilder();
+  builder.addResult('env/resources', 'No changes.\nPlan: 1 to add, 0 to change, 0 to destroy.', 'success');
+  assert.ok(builder.buildComment().includes('| `env/resources` | ⚠️ | +1 add |'));
+});

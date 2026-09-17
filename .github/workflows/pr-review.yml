@@ -254,9 +254,12 @@ jobs:
 
       - name: Post Plan Result
         uses: actions/github-script@v8
+        env:
+          MATRIX: ${{ needs.detect-changes.outputs.matrix }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { default: script } = await import('${{ github.workspace }}/.github/tfman/gh-scripts/post-comment.mjs');
             const hasChanges = '${{ needs.detect-changes.outputs.has-changes }}' === 'true';
-            await script({github, context, core, glob}, { mode: 'plan', deletePreviousComments: true, cleanupOnly: !hasChanges });
+            const expectedPaths = process.env.MATRIX ? JSON.parse(process.env.MATRIX).include.map(i => i.path) : [];
+            await script({github, context, core, glob}, { expectedPaths, mode: 'plan', deletePreviousComments: true, cleanupOnly: !hasChanges });

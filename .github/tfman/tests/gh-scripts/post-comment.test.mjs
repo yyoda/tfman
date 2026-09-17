@@ -207,7 +207,7 @@ describe('post-comment.mjs', () => {
         globberMock.glob.mock.mockImplementation(async () => ['plans/missing/info.json']);
 
         fs.readFileSync.mock.mockImplementation((filepath) => {
-             if (filepath.endsWith('info.json')) return JSON.stringify({ path: 'missing/log' });
+             if (filepath.endsWith('info.json')) return JSON.stringify({ path: 'missing/log', outcome: 'success' });
              return '';
         });
         // Log file does not exist
@@ -267,5 +267,40 @@ describe('post-comment.mjs', () => {
         const body = github.rest.issues.createComment.mock.calls[0].arguments[0].body;
         assert.ok(body.includes('| `env/default` | ✅ | +1 |'));
     });
+
+    it('cleans up stale comments before posting the zero-artifact notice', async () => {
+        glob.create.mock.mockImplementation(async () => globberMock);
+        globberMock.glob.mock.mockImplementation(async () => []);
+        github.rest.issues.listComments.mock.mockImplementation(async () => ({ data: [
+            { id: 42, user: { type: 'Bot' }, body: PlanCommentBuilder.COMMENT_HEADER },
+        ] }));
+        github.rest.issues.createComment.mock.mockImplementation(async () => {
+            assert.equal(github.rest.issues.deleteComment.mock.calls.length, 1);
+        });
+        await postComment({ github, context, core, glob }, {
+            mode: 'plan', deletePreviousComments: true,
+        }, { fs, path });
+        assert.equal(github.rest.issues.deleteComment.mock.calls[0].arguments[0].comment_id, 42);
+        assert.ok(github.rest.issues.createComment.mock.calls[0].arguments[0].body.startsWith(PlanCommentBuilder.COMMENT_HEADER));
+    });
+
+    for (const hasArtifact of [true, false]) {
+        it(`reports missing expected paths with existing artifacts: ${hasArtifact}`, async () => {
+            glob.create.mock.mockImplementation(async () => globberMock);
+            globberMock.glob.mock.mockImplementation(async () => hasArtifact ? ['plans/a/info.json'] : []);
+            fs.existsSync.mock.mockImplementation(() => true);
+            fs.readFileSync.mock.mockImplementation(filepath => filepath.endsWith('info.json')
+                ? JSON.stringify({ path: 'env/a', outcome: 'success' })
+                : 'No changes. Infrastructure is up-to-date.');
+            await postComment({ github, context, core, glob }, {
+                mode: 'plan', expectedPaths: ['env/a', 'env/a/'],
+            }, { fs, path });
+            const body = github.rest.issues.createComment.mock.calls[0].arguments[0].body;
+            assert.ok(body.includes('| `env/a/` | ❌ | Plan Failed |'));
+            assert.ok(body.includes(hasArtifact ? '| `env/a` | ✅ | No changes |' : '| `env/a` | ❌ | Plan Failed |'));
+            assert.ok(body.includes('(No result artifact was produced for this path — the job may have been cancelled or failed before uploading)'));
+            assert.ok(!body.includes('No plan results were produced for this run.'));
+        });
+    }
 
 });

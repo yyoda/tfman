@@ -336,12 +336,13 @@ jobs:
       pull-requests: write
       statuses: write
     needs: [setup, run]
-    if: "!cancelled() && needs.setup.result != 'skipped' && needs.setup.outputs.done != 'true'"
+    if: always() && needs.setup.result == 'success' && needs.setup.outputs.done != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
       - name: Download Artifacts
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           pattern: ${{ needs.setup.outputs.command }}-*
@@ -349,6 +350,7 @@ jobs:
           merge-multiple: false
 
       - name: Update Commit Status
+        if: always()
         uses: actions/github-script@v8
         env:
           COMMAND: ${{ needs.setup.outputs.command }}
@@ -362,18 +364,21 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: process.env.HEAD_SHA,
-              state: (result === 'success' || result === 'skipped') ? 'success' : 'failure',
+              state: (result === 'success' || result === 'skipped') ? 'success' : result === 'cancelled' ? 'error' : 'failure',
               context: `terraform/${command}`,
-              description: result === 'success' ? 'All Terraform jobs passed' : 'Some Terraform jobs failed',
+              description: result === 'cancelled' ? `Terraform ${command} was cancelled` : result === 'success' ? 'All Terraform jobs passed' : 'Some Terraform jobs failed',
               target_url: `${context.payload.repository.html_url}/actions/runs/${context.runId}`
             });
 
       - name: Post Command Execution Result
+        if: always()
         uses: actions/github-script@v8
         env:
+          MATRIX: ${{ needs.setup.outputs.matrix }}
           COMMAND: ${{ needs.setup.outputs.command }}
         with:
           script: |
             const command = process.env.COMMAND;
+            const expectedPaths = process.env.MATRIX ? JSON.parse(process.env.MATRIX).include.map(i => i.path) : [];
             const { default: script } = await import('${{ github.workspace }}/.github/tfman/gh-scripts/post-comment.mjs');
-            await script({ github, context, core, glob }, { mode: command, deletePreviousComments: command === 'plan' });
+            await script({ github, context, core, glob }, { expectedPaths, mode: command, deletePreviousComments: command === 'plan' });

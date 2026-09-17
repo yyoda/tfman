@@ -1,15 +1,16 @@
 // Default upper bound for a single GitHub Issue/PR comment body.
 // GitHub's hard limit is 65536 characters; we stay well under it for safety.
 export const DEFAULT_MAX_COMMENT_LENGTH = 60000;
-// Per-path budget for inline detail blocks. The full, untruncated output is
-// always available in the workflow run's Job Summary, so inline detail only
-// needs to be enough for a quick review.
+// Per-path budget for inline detail blocks. The Job Summary holds output
+// truncated at ~900 KB per root; the full file is in the run artifacts.
+// Inline detail only needs to be enough for a quick review.
 export const DEFAULT_PER_PATH_BUDGET = 12000;
 
 /**
  * Build a single fenced detail block for one path, optionally truncating the
  * content to a per-path budget. Pass `Infinity` as the budget to keep the full
- * output. When truncated, the full output lives in the Job Summary.
+ * output. The Job Summary truncates output at ~900 KB per root; the full file
+ * is in the run artifacts.
  * @param {string} tfPath
  * @param {string} content
  * @param {string} fence - Code fence language (e.g. 'hcl', 'text')
@@ -182,16 +183,16 @@ export class PlanCommentBuilder {
       return { icon: '❌', summary: 'Plan Failed', hasChanges: true };
     }
 
-    if (content.includes('No changes.')) {
-      return { icon: '✅', summary: 'No changes', hasChanges: false };
-    }
-
     let imported = 0, add = 0, change = 0, destroy = 0;
 
     // Try standard format. Plans that include config-driven import blocks
     // (Terraform 1.5+) prefix the summary with "N to import, " — capture it
     // optionally so those plans aren't misread as "no changes".
     const stdMatch = content.match(/Plan:\s*(?:(\d+) to import, )?(\d+) to add, (\d+) to change, (\d+) to destroy/);
+    const outputsChanged = content.includes('Changes to Outputs:');
+    if (!stdMatch && !outputsChanged && /^No changes\./m.test(content)) {
+      return { icon: '✅', summary: 'No changes', hasChanges: false };
+    }
     if (stdMatch) {
       imported = stdMatch[1] ? parseInt(stdMatch[1], 10) : 0;
       add = parseInt(stdMatch[2], 10);
@@ -210,7 +211,6 @@ export class PlanCommentBuilder {
     if (change > 0) parts.push(`~${change} change`);
     if (destroy > 0) parts.push(`-${destroy} destroy`);
 
-    const outputsChanged = content.includes('Changes to Outputs:');
     if (outputsChanged) parts.push('outputs changed');
 
     const hasChanges = (imported + add + change + destroy) > 0 || outputsChanged;

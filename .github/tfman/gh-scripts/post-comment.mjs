@@ -18,7 +18,8 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   const config = {
       mode: options.mode || 'plan',
       deletePreviousComments: options.deletePreviousComments === true,
-      cleanupOnly: options.cleanupOnly === true
+      cleanupOnly: options.cleanupOnly === true,
+      expectedPaths: options.expectedPaths || []
   };
 
   // Link to the current workflow run, where the full (untruncated) plan/apply
@@ -104,9 +105,10 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   const globber = await glob.create(behavior.artifactPattern);
   const infoFiles = await globber.glob();
 
-  if (infoFiles.length === 0) {
+  if (infoFiles.length === 0 && config.expectedPaths.length === 0) {
+    await cleanupPreviousComments();
     if (core) core.info(`No ${config.mode} results found.`);
-    const message = `### Terraform ${config.mode === 'plan' ? 'Plan' : 'Apply'} Result\n\nNo ${config.mode} results were produced for this run. The ${config.mode} jobs may have failed before producing any output — check the workflow run for details.` +
+    const message = `${COMMENT_HEADER}\n\nNo ${config.mode} results were produced for this run. The ${config.mode} jobs may have failed before producing any output — check the workflow run for details.` +
       (runUrl ? `\n\n> 📄 [Workflow run](${runUrl})` : '');
     await github.rest.issues.createComment({
         owner: context.repo.owner,
@@ -121,6 +123,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   await cleanupPreviousComments();
 
   // 3. Add results to Builder
+  const resultPaths = new Set();
   for (const infoFile of infoFiles) {
     try {
       const info = JSON.parse(fs.readFileSync(infoFile, 'utf8'));
@@ -129,13 +132,20 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       
       const logExists = fs.existsSync(logPath);
       const content = logExists ? fs.readFileSync(logPath, 'utf8') : '(Log file not found)';
-      const outcome = info.outcome ?? (logExists ? 'success' : 'failure');
+      const outcome = logExists ? (info.outcome ?? 'success') : 'failure';
       
       // Use the builder definition add method
       behavior.builder.add(builder, info.path, content, outcome);
+      resultPaths.add(info.path);
 
     } catch (error) {
       if (core) core.error(`Error processing ${infoFile}: ${error.message}`);
+    }
+  }
+
+  for (const expectedPath of new Set(config.expectedPaths)) {
+    if (!resultPaths.has(expectedPath)) {
+      behavior.builder.add(builder, expectedPath, '(No result artifact was produced for this path — the job may have been cancelled or failed before uploading)', 'failure');
     }
   }
 
