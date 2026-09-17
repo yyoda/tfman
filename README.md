@@ -76,7 +76,7 @@ $terraform apply environments/prod-us -target=aws_instance.web -target=module.vp
 $terraform help
 ```
 
-The pipeline resolves roles from `APPLIERS` and passes them to the CLI, which checks apply permissions before selecting targets when `--roles` is supplied. The run job re-checks permissions before apply. The pipeline executes the operation and posts the result — all in the same thread. Full audit trail in the PR history.
+The pipeline parses the command, validates the targets, checks permissions against `APPLIERS` before any Terraform code runs, executes the operation, and posts the result — all in the same thread. Full audit trail in the PR history.
 
 Note: directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to the repository root). Resource addresses for `-target` follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`, `aws_instance.web["blue"]`). Both `-target=<resource>` and `-target <resource>` (space-separated) forms are supported.
 
