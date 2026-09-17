@@ -90,13 +90,7 @@ jobs:
           BASE_SHA: ${{ steps.pr-details.outputs.base_sha }}
           HEAD_SHA: ${{ steps.pr-details.outputs.head_sha }}
         run: |
-          # TODO(tfman-isolation): drop this fallback once every open PR has
-          # rebased past the .github/scripts -> .github/tfman move. issue_comment
-          # workflows run from the default branch but check out the PR head, so a
-          # PR predating the move won't have .github/tfman yet.
-          CLI=".github/tfman/cli/index.mjs"
-          [ -f "$CLI" ] || CLI=".github/scripts/cli/index.mjs"
-          RESULT=$(node "$CLI" operate-command \
+          RESULT=$(node .github/tfman/cli/index.mjs operate-command \
             --comment-body "$COMMENT_BODY" \
             --base-sha "$BASE_SHA" \
             --head-sha "$HEAD_SHA")
