@@ -162,7 +162,7 @@ jobs:
         if: always()
         id: meta
         run: |
-          CLEAN_PATH=$(echo "${{ matrix.path }}" | tr '/' '-')
+          CLEAN_PATH="$(echo "${{ matrix.path }}" | tr '/' '-')-$(printf '%s' "${{ matrix.path }}" | sha256sum | cut -c1-8)"
           echo "clean_path=${CLEAN_PATH}" >> $GITHUB_OUTPUT
           echo "{\"path\": \"${{ matrix.path }}\", \"outcome\": \"${{ steps.plan.outcome == 'success' && 'success' || 'failure' }}\"}" > info.json
 
@@ -193,7 +193,7 @@ jobs:
             --format json --output trivy-report.json \
             --cache-dir "${{ github.workspace }}/.cache/trivy" \
             --quiet --skip-version-check || true
-          CLEAN_PATH=$(echo "${{ matrix.path }}" | tr '/' '-')
+          CLEAN_PATH="$(echo "${{ matrix.path }}" | tr '/' '-')-$(printf '%s' "${{ matrix.path }}" | sha256sum | cut -c1-8)"
           echo "clean_path=${CLEAN_PATH}" >> "$GITHUB_OUTPUT"
           if [ -f trivy-report.json ]; then
             C=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="CRITICAL")] | length' trivy-report.json 2>/dev/null || echo 0)

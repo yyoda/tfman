@@ -43,7 +43,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
         - Executes `terraform plan`.
         - Example: `$terraform plan`, `$terraform plan dev/frontend`, `$terraform plan -target=aws_instance.web`, `$terraform plan -target aws_instance.web`
 - **CONDITIONS**:
-    - **Targets**: Directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to repo/workspace root).
+    - **Targets**: Directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to repo/workspace root). Leading `./` and trailing `/` are ignored, and duplicate targets are collapsed into a single job.
     - **-target**: Resource addresses follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`, `aws_instance.web["blue"]`). Both `-target=<resource>` and `-target <resource>` (space-separated) forms are supported. Multiple `-target` flags can be specified.
     - **Execution User Restriction**: Users not listed in `APPLIERS` can run `plan` but `apply` is blocked.
     - Command parsing and target resolution run with the tfman scripts from the repository's default branch. Terraform itself runs against the PR head commit SHA resolved at the start of the run (the same SHA the commit status is reported on), so a push to the PR branch during the run cannot change what gets planned or applied. Unauthorized `apply` requests are rejected before any cloud credentials are configured.
