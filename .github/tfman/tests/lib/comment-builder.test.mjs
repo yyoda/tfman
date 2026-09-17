@@ -143,7 +143,7 @@ Plan: 1 to add, 0 to change, 0 to destroy.
     assert.ok(comment.includes('path/to/module-2'), 'Should include module path in details');
   });
 
-  it('Changes with imports: still detected as changes (regression for PR199)', () => {
+  it('Changes with imports: still detected as changes (config-driven import blocks)', () => {
     const builder = new PlanCommentBuilder();
     const planOutput = `
 Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
@@ -156,7 +156,7 @@ Terraform will perform the following actions:
 
 Plan: 2 to import, 4 to add, 11 to change, 1 to destroy.
         `;
-    builder.addResult('track-test/dev', planOutput);
+    builder.addResult('path/to/module-3', planOutput);
 
     const comment = builder.buildComment();
 
