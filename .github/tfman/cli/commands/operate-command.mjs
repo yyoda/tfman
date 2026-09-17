@@ -1,9 +1,27 @@
+import { appendFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { detectChanges } from '../../lib/ops/change-detector.mjs';
 import { selectTargets } from '../../lib/ops/target-selector.mjs';
 import { parseCommand } from '../../lib/ops/command-parser.mjs';
 import { requireArgs } from '../../lib/utils.mjs';
 
 export async function run(args, dependencies = {}) {
+  const result = await operate(args, dependencies);
+  if (args['github-output']) {
+    const delimiter = `ghadelim_${randomBytes(16).toString('hex')}`;
+    const matrix = !result.done && result.targetDirs.length > 0
+      ? JSON.stringify({ include: result.targetDirs }) : '';
+    await appendFile(args['github-output'],
+      `tf_targets_json=${JSON.stringify(result.tfTargets)}\n` +
+      `matrix<<${delimiter}\n${matrix}\n${delimiter}\n` +
+      `command=${result.command}\n` +
+      `done=${result.done ? 'true' : ''}\n` +
+      `message<<${delimiter}\n${result.message}\n${delimiter}\n`);
+  }
+  return result;
+}
+
+async function operate(args, dependencies) {
   const {
     _detectChanges = detectChanges,
     _selectTargets = selectTargets,
@@ -47,6 +65,23 @@ export async function run(args, dependencies = {}) {
   }
 
   const { command, targetDirs: parsedTargetDirs = [], tfTargets = [] } = parsed;
+  if (args.roles !== undefined && command === 'apply') {
+    let roles;
+    try {
+      roles = JSON.parse(args.roles);
+    } catch {
+      roles = [];
+    }
+    if (!Array.isArray(roles) || !roles.includes('applier')) {
+      return {
+        command: 'apply',
+        targetDirs: [],
+        tfTargets: [],
+        message: `User ${args.actor} does not have permission to apply. Required role: applier.`,
+        done: true,
+      };
+    }
+  }
   let targetDirs = [];
 
   try {

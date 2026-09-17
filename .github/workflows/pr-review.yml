@@ -142,35 +142,16 @@ jobs:
           # Save plan to text for comment
           terraform show -no-color tfplan > plan.txt
 
-      - name: Write Full Plan to Job Summary
-        if: always()
-        run: |
-          if [ -f plan.txt ]; then
-            {
-              echo "## 📄 Terraform Plan — \`${{ matrix.path }}\`"
-              echo ''
-              echo '```hcl'
-              # Neutralize any code fences in the output, then cap well under
-              # the ~1 MiB Job Summary per-step limit.
-              sed 's/```/~~~/g' plan.txt | head -c 900000
-              echo ''
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Create Artifact Metadata
+      - name: Write Plan Result
         if: always()
         id: meta
-        run: |
-          CLEAN_PATH="$(echo "${{ matrix.path }}" | tr '/' '-')-$(printf '%s' "${{ matrix.path }}" | sha256sum | cut -c1-8)"
-          echo "clean_path=${CLEAN_PATH}" >> "$GITHUB_OUTPUT"
-          echo "{\"path\": \"${{ matrix.path }}\", \"outcome\": \"${{ steps.plan.outcome == 'success' && 'success' || 'failure' }}\"}" > info.json
+        run: node "${{ github.workspace }}/.github/tfman/cli/index.mjs" write-result --path "${{ matrix.path }}" --command plan --outcome "${{ steps.plan.outcome }}"
 
       - name: Upload Artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: plan-${{ steps.meta.outputs.clean_path }}
+          name: ${{ steps.meta.outputs.artifact_name }}
           path: |
             ${{ matrix.path }}/plan.txt
             ${{ matrix.path }}/info.json

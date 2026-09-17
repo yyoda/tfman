@@ -102,37 +102,13 @@ jobs:
           if git cat-file -e "${HEAD_SHA}:.tfdeps.json" 2>/dev/null; then
             git show "${HEAD_SHA}:.tfdeps.json" > .tfdeps.json
           fi
-          RESULT=$(node .github/tfman/cli/index.mjs operate-command \
+          node .github/tfman/cli/index.mjs operate-command \
             --comment-body "$COMMENT_BODY" \
             --base-sha "$BASE_SHA" \
-            --head-sha "$HEAD_SHA")
-          echo "$RESULT" | jq
-          TARGET_DIRS=$(echo "$RESULT" | jq -c '.targetDirs // empty')
-          if [ -n "$TARGET_DIRS" ] && [ "$TARGET_DIRS" != "[]" ] && [ "$TARGET_DIRS" != "null" ]; then
-            MATRIX=$(echo "$TARGET_DIRS" | jq -c '{include: .}')
-          else
-            MATRIX=""
-          fi
-          TF_TARGETS_JSON=$(echo "$RESULT" | jq -c '.tfTargets // []')
-          COMMAND=$(echo "$RESULT" | jq -r '.command')
-          DONE=$(echo "$RESULT" | jq -r '.done // empty')
-          MESSAGE=$(echo "$RESULT" | jq -r '.message')
-          if [ "$COMMAND" == "apply" ] && ! echo "$ROLES" | jq -e 'any(.[]; . == "applier")' > /dev/null; then
-            MATRIX=""
-            DONE=true
-            MESSAGE="User ${ACTOR} does not have permission to apply. Required role: applier."
-          fi
-          {
-            echo "tf_targets_json=$TF_TARGETS_JSON"
-            echo "matrix<<EOF"
-            echo "$MATRIX"
-            echo "EOF"
-            echo "command=$COMMAND"
-            echo "done=$DONE"
-            echo "message<<EOF"
-            echo "$MESSAGE"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+            --head-sha "$HEAD_SHA" \
+            --roles "$ROLES" \
+            --actor "$ACTOR" \
+            --github-output "$GITHUB_OUTPUT"
 
       - name: Post Command Result If Need
         if: steps.set-matrix.outputs.done == 'true'
@@ -277,50 +253,16 @@ jobs:
           set -o pipefail
           terraform apply -auto-approve -input=false -no-color "${TARGET_FLAGS[@]}" 2>&1 | tee apply.txt
 
-      - name: Write Full Output to Job Summary
+      - name: Write Result
         if: always()
-        run: |
-          COMMAND="${{ needs.setup.outputs.command }}"
-          if [ "$COMMAND" == "plan" ]; then
-            LOG_FILE="plan.txt"; FENCE="hcl"; TITLE="Plan"
-          else
-            LOG_FILE="apply.txt"; FENCE="text"; TITLE="Apply"
-          fi
-          if [ -f "$LOG_FILE" ]; then
-            {
-              echo "## 📄 Terraform ${TITLE} — \`${{ matrix.path }}\`"
-              echo ''
-              echo "\`\`\`${FENCE}"
-              # Neutralize any code fences in the output, then cap well under
-              # the ~1 MiB Job Summary per-step limit.
-              sed 's/```/~~~/g' "$LOG_FILE" | head -c 900000
-              echo ''
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Create Artifact Metadata
-        if: always()
-        run: |
-          CLEAN_PATH="$(echo "${{ matrix.path }}" | tr '/' '-')-$(printf '%s' "${{ matrix.path }}" | sha256sum | cut -c1-8)"
-          COMMAND="${{ needs.setup.outputs.command }}"
-
-          # Determine outcome based on steps
-          if [ "$COMMAND" == "plan" ]; then
-            OUTCOME="${{ steps.plan.outcome }}"
-          else
-            OUTCOME="${{ steps.apply.outcome }}"
-          fi
-
-          echo "{\"path\": \"${{ matrix.path }}\", \"outcome\": \"$OUTCOME\"}" > info.json
-          echo "clean_path=$CLEAN_PATH" >> "$GITHUB_ENV"
-          echo "command=$COMMAND" >> "$GITHUB_ENV"
+        id: meta
+        run: node "${{ github.workspace }}/.github/tfman/cli/index.mjs" write-result --path "${{ matrix.path }}" --command "${{ needs.setup.outputs.command }}" --outcome "${{ needs.setup.outputs.command == 'plan' && steps.plan.outcome || steps.apply.outcome }}"
 
       - name: Upload Artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.command }}-${{ env.clean_path }}
+          name: ${{ steps.meta.outputs.artifact_name }}
           path: |
             ${{ matrix.path }}/plan.txt
             ${{ matrix.path }}/apply.txt

@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { run } from '../../../cli/commands/operate-command.mjs';
@@ -151,5 +154,70 @@ describe('cli/commands/operate-command', () => {
       assert.strictEqual(result.command, 'error');
       assert.strictEqual(result.message, 'Git Error');
     });
+  });
+});
+
+describe('operate-command roles and step outputs', () => {
+  const baseArgs = { 'comment-body': '$terraform apply', 'base-sha': 'base', 'head-sha': 'head', actor: 'someone' };
+
+  for (const roles of ['["planner"]', 'invalid json', '[]', '"applier"', 'null']) {
+    it(`denies apply before target resolution with roles ${roles}`, async () => {
+      let calls = 0;
+      const resolve = async () => { calls++; return [{ path: 'env/x' }]; };
+      for (const comment of ['$terraform apply', '$terraform apply env/x']) {
+        const result = await run({ ...baseArgs, 'comment-body': comment, roles }, { _detectChanges: resolve, _selectTargets: resolve });
+        assert.deepStrictEqual(result, {
+          command: 'apply', targetDirs: [], tfTargets: [],
+          message: 'User someone does not have permission to apply. Required role: applier.', done: true,
+        });
+      }
+      assert.strictEqual(calls, 0);
+    });
+  }
+
+  for (const [command, roles] of [['apply', '["applier"]'], ['plan', '["planner"]'], ['plan', 'invalid json']]) {
+    it(`allows ${command} with roles ${roles}`, async () => {
+      const result = await run({ ...baseArgs, 'comment-body': `$terraform ${command}`, roles }, {
+        _detectChanges: async () => [{ path: 'env/x' }],
+      });
+      assert.strictEqual(result.done, false);
+      assert.strictEqual(result.command, command);
+      assert.deepStrictEqual(result.targetDirs, [{ path: 'env/x' }]);
+    });
+  }
+
+  it('appends ordered step outputs with multiline messages and fresh delimiters', async (t) => {
+    const cwd = await fs.mkdtemp(join(tmpdir(), 'operate-output-'));
+    t.after(() => fs.rm(cwd, { recursive: true, force: true }));
+    const output = join(cwd, 'output');
+    await fs.writeFile(output, 'existing=value\n');
+    const cases = [
+      { command: 'help', targetDirs: [], tfTargets: [], message: 'first line\nEOF\nlast line\n', done: true },
+      { command: 'plan', targetDirs: [{ path: 'env/x', providers: [] }], tfTargets: ['module.example'], message: '', done: false },
+    ];
+    const delimiters = [];
+    let previous = 'existing=value\n';
+    for (const expected of cases) {
+      const result = await run({ ...baseArgs, 'github-output': output }, {
+        _parseCommand: () => ({ ...expected, targetDirs: [] }),
+        _detectChanges: async () => expected.targetDirs,
+      });
+      assert.deepStrictEqual(result, expected);
+      const content = await fs.readFile(output, 'utf8');
+      assert.ok(content.startsWith(previous));
+      const appended = content.slice(previous.length);
+      const delimiter = appended.match(/matrix<<(ghadelim_[a-f0-9]+)\n/)[1];
+      delimiters.push(delimiter);
+      const matrix = expected.done ? '' : JSON.stringify({ include: expected.targetDirs });
+      assert.strictEqual(appended,
+        `tf_targets_json=${JSON.stringify(expected.tfTargets)}\n` +
+        `matrix<<${delimiter}\n${matrix}\n${delimiter}\n` +
+        `command=${expected.command}\n` +
+        `done=${expected.done ? 'true' : ''}\n` +
+        `message<<${delimiter}\n${expected.message}\n${delimiter}\n`);
+      assert.strictEqual(appended.split(`message<<${delimiter}\n`)[1].split(`\n${delimiter}\n`)[0], expected.message);
+      previous = content;
+    }
+    assert.notStrictEqual(delimiters[0], delimiters[1]);
   });
 });
