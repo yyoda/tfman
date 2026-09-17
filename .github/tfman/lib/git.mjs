@@ -8,6 +8,7 @@ import { logger } from './logger.mjs';
  * the two commits — the same semantics as GitHub's "Files changed" tab. This
  * ensures only files changed on the head branch since it diverged from base
  * are reported, even if base has advanced further in the meantime.
+ * Reports both source and destination paths for renames, without quoting paths.
  * @param {string} baseSha - The base commit SHA.
  * @param {string} headSha - The head commit SHA.
  * @param {string} root - The root directory of the repository.
@@ -15,8 +16,8 @@ import { logger } from './logger.mjs';
  */
 export async function runGitDiff(baseSha, headSha, root) {
   try {
-    const { stdout } = await runCommand('git', ['diff', '--name-only', `${baseSha}...${headSha}`], { cwd: root });
-    return stdout.split('\n').filter(Boolean);
+    const { stdout } = await runCommand('git', ['diff', '--name-only', '-z', '--no-renames', `${baseSha}...${headSha}`], { cwd: root });
+    return stdout.split('\0').filter(Boolean);
   } catch (error) {
     throw new Error(`Error running git diff: ${error.message}`);
   }
