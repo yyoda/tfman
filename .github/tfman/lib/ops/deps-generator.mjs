@@ -1,7 +1,7 @@
 import { join, relative, resolve, isAbsolute } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
 import { exists, runCommand, getWorkspaceRoot, loadJson } from '../utils.mjs';
-import { getRepoName } from '../git.mjs';
+import { getRepoIdentity, normalizeRepoIdentity } from '../git.mjs';
 import { logger } from '../logger.mjs';
 
 /**
@@ -80,26 +80,25 @@ export async function findTerraformRoots(root, ignorePatterns) {
 
 /**
  * Resolves a local module path relative to the workspace root.
- * Git sources are local only when the repository name matches exactly and no ref pins them.
+ * Git sources are local only when the host, owner and repository match origin exactly and no ref pins them.
  * Modules installed under .terraform/ are not treated as local dependencies.
  * @param {string} rootAbs - The absolute path of the root module.
  * @param {string} source - The source string from the module definition.
  * @param {string} dirPath - The directory path of the module (from terraform modules json).
  * @param {string} workspaceRoot - The workspace root directory.
- * @param {string} repoName - The repository name.
+ * @param {string} repoIdentity - The origin repository identity.
  * @returns {Promise<string|null>} - The resolved relative path or null.
  */
-export async function resolveLocalModule(rootAbs, source, dirPath, workspaceRoot, repoName) {
+export async function resolveLocalModule(rootAbs, source, dirPath, workspaceRoot, repoIdentity) {
   let candidatePath = null;
 
   // 1. Git source pointing to the current repository
   if (source.startsWith('git::') || source.startsWith('github.com/')) {
-    const parts = source.replace(/^git::/, '').split('//');
+    const parts = source.replace(/^git::/, '').replace(/^[a-z]+:\/\//i, '').split('//');
     if (parts.length < 2) return null;
     const [pathPart, ...queryParts] = parts[parts.length - 1].split('?');
     if (queryParts.join('?').includes('ref=')) return null;
-    const sourceRepoName = parts[parts.length - 2].replace(/\.git$/, '').split(/[/:]/).pop();
-    if (!repoName || sourceRepoName !== repoName) return null;
+    if (!repoIdentity || normalizeRepoIdentity(source) !== repoIdentity) return null;
     candidatePath = resolve(workspaceRoot, pathPart);
   }
 
@@ -136,16 +135,17 @@ export async function resolveLocalModule(rootAbs, source, dirPath, workspaceRoot
  * Extract modules used in a Terraform root directory.
  * @param {string} rootAbs - Absolute path to the Terraform root.
  * @param {string} workspaceRoot - Absolute path to the workspace root.
- * @param {string} repoName - Name of the repository.
+ * @param {string} repoIdentity - Origin repository identity.
  * @param {string[]} logs - Array to accumulate logs/errors.
  * @returns {Promise<string[]|null>} - List of local module paths used, or null on failure.
  */
-async function extractModules(rootAbs, workspaceRoot, repoName, logs, runCommand) {
+async function extractModules(rootAbs, workspaceRoot, repoIdentity, logs, runCommand) {
   try {
     let stdout;
     try {
       ({ stdout } = await runCommand('terraform', ['modules', '-json'], { cwd: rootAbs }));
     } catch (error) {
+      if (!/^.*no command named "modules"\.?\s*$/im.test(error.message)) throw error;
       const manifest = join(rootAbs, '.terraform', 'modules', 'modules.json');
       if (!(await exists(manifest))) throw error;
       stdout = await readFile(manifest, 'utf-8');
@@ -160,7 +160,11 @@ async function extractModules(rootAbs, workspaceRoot, repoName, logs, runCommand
         return null;
     }
 
-    const modulesRaw = data.Modules || data.modules || [];
+    const modulesRaw = Array.isArray(data?.Modules) ? data.Modules : data?.modules;
+    if (!Array.isArray(modulesRaw)) {
+      logs.push(`❌ Unexpected 'terraform modules' output in ${rootAbs}: missing modules array`);
+      return null;
+    }
     const modulesSet = new Set();
 
     for (const m of modulesRaw) {
@@ -171,7 +175,7 @@ async function extractModules(rootAbs, workspaceRoot, repoName, logs, runCommand
       if (!source) continue;
 
       const dir = m.Dir || m.dir || '';
-      const modPath = await resolveLocalModule(rootAbs, source, dir, workspaceRoot, repoName);
+      const modPath = await resolveLocalModule(rootAbs, source, dir, workspaceRoot, repoIdentity);
       if (modPath) {
         modulesSet.add(modPath);
       }
@@ -218,10 +222,10 @@ async function extractProviders(rootAbs, logs, runCommand) {
  * Analyze a single Terraform root directory.
  * @param {string} rootRelPath - Path relative to workspace root.
  * @param {string} workspaceRoot - Absolute workspace root path.
- * @param {string} repoName - Repository name.
+ * @param {string} repoIdentity - Origin repository identity.
  * @returns {Promise<object>} - Analysis result.
  */
-async function analyzeRoot(rootRelPath, workspaceRoot, repoName, runCommand) {
+async function analyzeRoot(rootRelPath, workspaceRoot, repoIdentity, runCommand) {
   const rootAbs = resolve(workspaceRoot, rootRelPath);
   const result = {
     root: rootRelPath,
@@ -242,17 +246,17 @@ async function analyzeRoot(rootRelPath, workspaceRoot, repoName, runCommand) {
       await runCommand('terraform', ['init', '-backend=false', '-input=false'], { cwd: rootAbs });
     } catch (error) {
       result.logs.push(`❌ Initialization failed: ${error.message}`);
-      result.status = 'error';
+      result.status = 'failure';
       return result;
     }
   }
 
   logger.info(`[${rootRelPath}] Extracting modules...`);
-  const modules = await extractModules(rootAbs, workspaceRoot, repoName, result.logs, runCommand);
+  const modules = await extractModules(rootAbs, workspaceRoot, repoIdentity, result.logs, runCommand);
   logger.info(`[${rootRelPath}] Extracting providers...`);
   const providers = await extractProviders(rootAbs, result.logs, runCommand);
 
-  if (modules === null || providers === null) result.status = 'error';
+  if (modules === null || providers === null) result.status = 'failure';
   result.modules = modules ?? [];
   result.providers = providers ?? [];
 
@@ -266,15 +270,15 @@ async function analyzeRoot(rootRelPath, workspaceRoot, repoName, runCommand) {
  * @returns {Promise<object>} - { results: Array<AnalysisResult>, roots: string[] }
  */
 export async function generateDependencyGraph(workspaceRoot, ignorePatterns, dependencies = {}) {
-  const { runCommand: executeCommand = runCommand, getRepoName: resolveRepoName = getRepoName } = dependencies;
-  const repoName = await resolveRepoName(workspaceRoot);
+  const { runCommand: executeCommand = runCommand, getRepoIdentity: resolveRepoIdentity = getRepoIdentity } = dependencies;
+  const repoIdentity = await resolveRepoIdentity(workspaceRoot);
   const roots = await findTerraformRoots(workspaceRoot, ignorePatterns);
 
   logger.info(`Found ${roots.length} Terraform roots. Starting analysis...`);
 
   // Running in parallel might be heavy if there are many roots (init runs concurrent)
   // But for now, let's keep it parallel as per original implementation logic (implied).
-  const promises = roots.map(r => analyzeRoot(r, workspaceRoot, repoName, executeCommand));
+  const promises = roots.map(r => analyzeRoot(r, workspaceRoot, repoIdentity, executeCommand));
   const results = await Promise.all(promises);
 
   return { results, roots };

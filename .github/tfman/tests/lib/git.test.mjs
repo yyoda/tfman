@@ -8,7 +8,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { runGitDiff } from '../../lib/git.mjs';
+import { runGitDiff, normalizeRepoIdentity } from '../../lib/git.mjs';
 import { runCommand } from '../../lib/utils.mjs';
 
 describe('runGitDiff', () => {
@@ -114,4 +114,24 @@ describe('runGitDiff path handling', () => {
   it('preserves non-ASCII characters and spaces without quoting paths', async () => {
     assert.deepStrictEqual(await runGitDiff(renameSha, featureSha, repoDir), [specialPath]);
   });
+});
+
+describe('normalizeRepoIdentity', () => {
+  for (const url of [
+    'https://github.com/ORG/REPO.git',
+    'git@github.com:org/repo.git',
+    'ssh://git@github.com/org/repo',
+    'github.com/org/repo',
+    'git::https://github.com/org/repo.git//modules/x?ref=v1',
+    'ssh://git@github.com:22/org/repo',
+    'https://user:token@github.com/org/repo.git',
+    'git::ssh://git@github.com:22/org/repo.git//modules/x?ref=v1',
+  ]) {
+    it(`normalizes ${url}`, () => {
+      assert.strictEqual(normalizeRepoIdentity(url), 'github.com/org/repo');
+    });
+  }
+  for (const url of [null, '', 'repo', 'github.com/repo', 'https://github.com/org']) {
+    it(`rejects ${url}`, () => assert.strictEqual(normalizeRepoIdentity(url), null));
+  }
 });

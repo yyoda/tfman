@@ -24,7 +24,7 @@ async function analyze(t, { modules = modulesJson, manifest, lockfile = true, sc
     await writeFile(join(root, '.terraform/modules/modules.json'), manifest);
   }
   const { results, roots } = await generateDependencyGraph(workspace, new Set(), {
-    getRepoName: async () => 'tfman',
+    getRepoIdentity: async () => 'github.com/org/tfman',
     runCommand: async (command, args, options) => {
       assert.equal(command, 'terraform');
       assert.equal(options.cwd, root);
@@ -56,6 +56,8 @@ describe('resolveLocalModule', () => {
     '../../modules/vpc'
   ];
   const rejected = [
+    'git::https://github.com/unrelated-owner/tfman.git//modules/vpc',
+    'git::https://example.invalid/org/tfman.git//modules/vpc',
     'git::https://github.com/org/tfman-tools.git//modules/vpc',
     'git::https://github.com/org/xtfman.git//modules/vpc',
     'git::https://github.com/tfman/other.git//modules/vpc',
@@ -73,7 +75,7 @@ describe('resolveLocalModule', () => {
         await mkdir(join(workspace, 'modules/vpc'), { recursive: true });
         await mkdir(join(rootAbs, '.terraform/modules/vpc'), { recursive: true });
         const dirPath = source === '../../modules/vpc' ? '' : '.terraform/modules/vpc';
-        assert.equal(await resolveLocalModule(rootAbs, source, dirPath, workspace, 'tfman'), expected);
+        assert.equal(await resolveLocalModule(rootAbs, source, dirPath, workspace, 'github.com/org/tfman'), expected);
       });
     }
   }
@@ -100,12 +102,12 @@ describe('lib/ops/deps-generator', () => {
 
   it('b. fails when the modules command fails without a manifest', async t => {
     const result = await analyze(t, { modules: new Error('unsupported command') });
-    assert.equal(result.status, 'error');
+    assert.equal(result.status, 'failure');
     assert.ok(result.logs.some(log => log.includes("'terraform modules' failed")));
   });
 
   it('c. falls back to the initialized modules manifest', async t => {
-    const result = await analyze(t, { modules: new Error('unsupported command'), manifest: modulesJson });
+    const result = await analyze(t, { modules: new Error('Command failed: terraform\nTerraform has no command named "modules".'), manifest: modulesJson });
     assert.equal(result.status, 'success');
     assert.deepEqual(result.modules, ['modules/net']);
     assert.ok(result.logs.some(log => log.includes("'terraform modules' unavailable") && log.includes('used .terraform/modules/modules.json')));
@@ -113,14 +115,14 @@ describe('lib/ops/deps-generator', () => {
 
   it('d. fails on invalid command JSON without falling back', async t => {
     const result = await analyze(t, { modules: 'invalid json', manifest: modulesJson });
-    assert.equal(result.status, 'error');
+    assert.equal(result.status, 'failure');
     assert.ok(result.logs.some(log => log.includes('JSON decode error')));
     assert.ok(result.logs.every(log => !log.includes('unavailable')));
   });
 
   it('e. fails when provider schema extraction fails', async t => {
     const result = await analyze(t, { lockfile: false, schema: new Error('schema failed') });
-    assert.equal(result.status, 'error');
+    assert.equal(result.status, 'failure');
     assert.ok(result.logs.some(log => log.includes('Failed to get providers schema')));
   });
 
@@ -131,8 +133,40 @@ describe('lib/ops/deps-generator', () => {
   });
 
   it('fails on invalid manifest JSON', async t => {
-    const result = await analyze(t, { modules: new Error('unsupported command'), manifest: 'invalid json' });
-    assert.equal(result.status, 'error');
+    const result = await analyze(t, { modules: new Error('Command failed: terraform\nTerraform has no command named "modules".'), manifest: 'invalid json' });
+    assert.equal(result.status, 'failure');
     assert.ok(result.logs.some(log => log.includes('JSON decode error')));
   });
+});
+
+for (const [name, options] of [
+  ['generic command failure with a manifest', { modules: new Error('Command failed: terraform\nInitialization required'), manifest: modulesJson }],
+  ['missing modules array in command output', { modules: '{}' }],
+  ['missing modules array in manifest', { modules: new Error('no command named "modules"'), manifest: '{}' }],
+]) {
+  it(`fails for ${name}`, async t => {
+    const result = await analyze(t, options);
+    assert.equal(result.status, 'failure');
+    assert.ok(result.logs.some(log => log.startsWith('❌')));
+    if (name.startsWith('missing')) assert.ok(result.logs.some(log => log.includes('missing modules array')));
+    else assert.ok(result.logs.every(log => !log.includes('unavailable')));
+  });
+}
+
+it('fails for the older Terraform usage message even with a manifest', async t => {
+  const result = await analyze(t, {
+    modules: new Error('Command failed: terraform\nUsage: terraform [global options] <subcommand> [args]'),
+    manifest: modulesJson,
+  });
+  assert.equal(result.status, 'failure');
+  assert.ok(result.logs.every(log => !log.includes('unavailable')));
+});
+
+it('fails when an invalid expression merely mentions the missing command message', async t => {
+  const result = await analyze(t, {
+    modules: new Error('Error: Invalid expression: no command named "modules" is not a valid expression'),
+    manifest: modulesJson,
+  });
+  assert.equal(result.status, 'failure');
+  assert.ok(result.logs.every(log => !log.includes('unavailable')));
 });

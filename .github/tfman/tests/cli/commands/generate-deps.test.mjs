@@ -19,7 +19,7 @@ describe('cli/commands/generate-deps', () => {
 
   const mockGetWorkspaceRoot = async () => '/mock/root';
   const mockLoadIgnorePatterns = async () => [];
-  const mockGetRepoName = async () => 'mock-repo';
+  const mockGetRepoIdentity = async () => 'github.com/owner/mock-repo';
 
   it('should generate dependency graph successfully', async (context) => {
     const mockGenerateDependencyGraph = async () => ({
@@ -51,7 +51,7 @@ describe('cli/commands/generate-deps', () => {
       getWorkspaceRoot: mockGetWorkspaceRoot,
       generateDependencyGraph: mockGenerateDependencyGraph,
       loadIgnorePatterns: mockLoadIgnorePatterns,
-      getRepoName: mockGetRepoName,
+      getRepoIdentity: mockGetRepoIdentity,
       writeFile: mockWriteFile
     };
 
@@ -80,7 +80,7 @@ describe('cli/commands/generate-deps', () => {
         getWorkspaceRoot: mockGetWorkspaceRoot,
         generateDependencyGraph: async () => ({}),
         loadIgnorePatterns: mockLoadIgnorePatterns,
-        getRepoName: mockGetRepoName, // Provide mock to avoid using default
+        getRepoIdentity: mockGetRepoIdentity, // Provide mock to avoid using default
         writeFile: async () => {} 
       };
 
@@ -94,7 +94,7 @@ describe('cli/commands/generate-deps', () => {
 
     const mockGenerateFail = async () => ({
         results: [
-            { root: 'env/fail', status: 'error', logs: ['error log'] }
+            { root: 'env/fail', status: 'failure', logs: ['error log'] }
         ],
         roots: ['env/fail']
     });
@@ -105,7 +105,7 @@ describe('cli/commands/generate-deps', () => {
         getWorkspaceRoot: mockGetWorkspaceRoot,
         generateDependencyGraph: mockGenerateFail,
         loadIgnorePatterns: mockLoadIgnorePatterns,
-        getRepoName: mockGetRepoName, // Provide mock to avoid using default
+        getRepoIdentity: mockGetRepoIdentity, // Provide mock to avoid using default
         writeFile: async () => {}
     };
 

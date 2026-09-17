@@ -42,3 +42,34 @@ export async function getRepoName(root) {
     return null;
   }
 }
+
+/** Normalize a Git URL to its lowercase host/owner/repository identity. */
+export function normalizeRepoIdentity(url) {
+  if (typeof url !== 'string') return null;
+  let normalized = url.trim().replace(/^git::/i, '');
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) {
+    try {
+      const parsed = new URL(normalized);
+      normalized = `${parsed.hostname}${parsed.pathname}`;
+    } catch {
+      return null;
+    }
+  } else {
+    normalized = normalized.replace(/^[^/@]+@/, '')
+      .replace(/^([^/:]+):(?=[^/])/, '$1/');
+  }
+  normalized = normalized.split('?')[0].split('//')[0].replace(/\.git$/i, '');
+  const match = normalized.match(/^([^/\s:]+)\/([^/\s]+)\/([^/\s]+)$/);
+  return match ? match.slice(1).join('/').toLowerCase() : null;
+}
+
+/** Return the identity of the origin remote, or null if unavailable. */
+export async function getRepoIdentity(root) {
+  try {
+    const { stdout } = await runCommand('git', ['remote', 'get-url', 'origin'], { cwd: root });
+    return normalizeRepoIdentity(stdout);
+  } catch (error) {
+    logger.warning(`⚠️  Could not determine repository identity from git remote: ${error.message}`);
+    return null;
+  }
+}
