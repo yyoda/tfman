@@ -26,7 +26,6 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  id-token: write
   contents: read
 
 env:
@@ -34,6 +33,7 @@ env:
 
 jobs:
   authorize:
+    permissions: {}
     runs-on: ubuntu-latest
     outputs:
       roles: ${{ steps.get-roles.outputs.roles }}
@@ -43,15 +43,22 @@ jobs:
         env:
           ACTOR: ${{ github.actor }}
           APPLIERS: ${{ vars.APPLIERS }}
+          COMMAND: ${{ inputs.command }}
         run: |
-          if echo "$APPLIERS" | jq -e --arg actor "$ACTOR" 'contains([$actor])' > /dev/null 2>&1; then
+          if echo "$APPLIERS" | jq -e --arg actor "$ACTOR" 'any(.[]; . == $actor)' > /dev/null 2>&1; then
             ROLES='["applier"]'
           else
             ROLES='["planner"]'
           fi
+          if [ "$COMMAND" == "apply" ] && ! echo "$ROLES" | jq -e 'any(.[]; . == "applier")' > /dev/null; then
+            echo "::error::User $ACTOR does not have permission to apply. Required role: applier."
+            exit 1
+          fi
           echo "roles=$ROLES" >> $GITHUB_OUTPUT
 
   setup:
+    permissions:
+      contents: read
     needs: authorize
     runs-on: ubuntu-latest
     outputs:
@@ -69,6 +76,7 @@ jobs:
         env:
           TARGETS: ${{ inputs.targets }}
         run: |
+          set -euo pipefail
           # Use the select-targets command to generate the matrix json
           # Wrap in { include: ... } and minify with jq -c
           MATRIX=$(node .github/tfman/cli/index.mjs select-targets --targets "$TARGETS" | jq -c '{include: .}')
@@ -82,6 +90,9 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   run:
+    permissions:
+      id-token: write
+      contents: read
     needs: [authorize, setup]
     runs-on: ubuntu-latest
     name: run on ${{ matrix.path }}
@@ -170,7 +181,7 @@ jobs:
           ACTOR: ${{ github.actor }}
           TF_TARGETS: ${{ inputs.tf_targets }}
         run: |
-          if ! echo "$ROLES" | jq -e 'contains(["applier"])' > /dev/null; then
+          if ! echo "$ROLES" | jq -e 'any(.[]; . == "applier")' > /dev/null; then
             echo "User $ACTOR does not have permission to apply. Required role: applier."
             exit 1
           fi

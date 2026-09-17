@@ -13,8 +13,9 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - Identifies changed directories based on the diff between the base branch and the head branch.
     - Uses scripts under `.github/tfman/cli` for change detection.
     - Runs `terraform plan` in parallel for each detected directory and saves the results as artifacts.
+    - Roots whose job fails before `terraform plan` runs (`fmt`, `init`, or `validate`) are listed as ❌ `Plan Failed` with `(Log file not found)` because no plan output exists; only failures inside `terraform plan` itself carry the captured error output, and plans that only change outputs are reported as changes rather than "No changes".
     - Finally, collects all results from artifacts and posts them in a comment. This flow is used to consolidate reports into a single post.
-    - To prevent comment clutter from new commits, old posts are deleted each time a new comment is posted.
+    - Stale plan comments are removed on every run, including when no results were produced, by scanning all comment pages. A missing plan artifact for an expected root is shown as ❌ `Plan Failed`. Pushes with zero changed Terraform roots also delete old plan comments without posting a new comment.
 - **STATIC ANALYSIS** (steps appended to the `plan` job; per changed target, same scope as the plan):
     - **tflint** (gate) — installs the pinned `aws` plugin (cached under `~/.tflint.d/plugins`) and lints each changed root against the repo-root `.tflint.hcl`, passed via `--config` because tflint does not walk up to the repo root. Fails the job on findings at **warning severity or above** (hardcoded via `--minimum-failure-severity=warning`; edit that flag to change the threshold). Skipped when `.tflint.hcl` is absent. `.tflint.hcl`'s own `rule { enabled = false }` blocks already suppress `terraform_required_version` / `terraform_required_providers` (versions come from `.terraform-version`/tenv), so no CLI `--disable-rule` flags are needed.
     - **trivy** (informational) — scans each changed root using the repo-root `trivy.yaml`, writes a HIGH/CRITICAL summary to the job log, and uploads the full JSON report as a `trivy-*` artifact. It **never fails the job** (`|| true`, no `--exit-code`) — advisory until the misconfiguration backlog is triaged. Skipped when `trivy.yaml` is absent.
@@ -42,9 +43,12 @@ This document consolidates the documentation for GitHub Actions Workflows and th
         - Executes `terraform plan`.
         - Example: `$terraform plan`, `$terraform plan dev/frontend`, `$terraform plan -target=aws_instance.web`, `$terraform plan -target aws_instance.web`
 - **CONDITIONS**:
-    - **Targets**: Directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to repo/workspace root).
-    - **-target**: Resource addresses follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`). Both `-target=<resource>` and `-target <resource>` (space-separated) forms are supported. Multiple `-target` flags can be specified.
+    - **Targets**: Directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to repo/workspace root). Leading `./` and trailing `/` are ignored, and duplicate targets are collapsed into a single job.
+    - **-target**: Resource addresses follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`, `aws_instance.web["blue"]`). Both `-target=<resource>` and `-target <resource>` (space-separated) forms are supported. Multiple `-target` flags can be specified.
     - **Execution User Restriction**: Users not listed in `APPLIERS` can run `plan` but `apply` is blocked.
+    - Command parsing and target resolution run with the tfman scripts from the repository's default branch. Terraform itself runs against the PR head commit SHA resolved at the start of the run (the same SHA the commit status is reported on), so a push to the PR branch during the run cannot change what gets planned or applied. Unauthorized `apply` requests are rejected before any cloud credentials are configured.
+
+    - Cancelled runs report an `error` commit status and a comment with ❌ rows for roots that produced no artifact.
 
 ### DriftDetection
 - **PURPOSE**:
@@ -79,14 +83,18 @@ User authorization is managed via the `APPLIERS` GitHub Actions repository varia
 - Add or remove GitHub usernames in this JSON array to grant or revoke `APPLIERS` permissions.
 - If the variable is not set or the user is not listed, they default to the `planner` role (apply operations are blocked).
 
+`plan` runs with the same cloud identity as `apply` unless the OIDC role's trust policy / permissions are scoped; use a read-only role or a separate role for plan where possible.
+
 #### Version Management
 A `.terraform-version` file must exist in all working directories.
+
+The repository root itself is never treated as a Terraform root; a root-level `.terraform-version` only pins the tool version. Nested roots are supported: a changed file is attributed to the deepest root that contains it. A local module that lives inside another root still triggers every root that consumes it.
 
 #### Optional Environment Variables (`.env`)
 When executing each job, if an `.env` file exists in `.github/env.d/<path>/`, it is automatically loaded. If it does not exist, the workflow logs a skip message and continues.
 
 #### Dependency Definition (`.tfdeps.json`)
-`DriftDetection` and parts of the change detection logic depend on the `.tfdeps.json` file, which defines the directory structure and dependencies. If you add a new Terraform directory or delete one, you must update this file.
+`DriftDetection` and parts of the change detection logic depend on the `.tfdeps.json` file, which defines the directory structure and dependencies. Regenerate it whenever a Terraform root is added, removed, or moved, whenever a root starts or stops using a local module, or whenever a root's provider set changes (`.terraform.lock.hcl`). The workflows also select cloud credentials from the recorded providers, so a stale entry can leave a root without the credentials its new provider needs.
 
 For update instructions, please refer to the **CLI Scripts** section below.
 
@@ -108,7 +116,7 @@ The following command is executed in the some channel. If you add a new workflow
 - **Logic Separation**: Separates complex logic (e.g., PR comment formatting, artifact aggregation) from YAML files into JavaScript modules to keep workflows clean.
 
 ### Scripts
-- `gh-scripts/post-comment.mjs`: Utility script for posting comments to Pull Requests. It handles formatting of `terraform plan` and `terraform apply` results, and aggregating reports from multiple matrix jobs. The full output is posted inline as before; only when the comment would exceed GitHub's 65536-character limit does it fall back gracefully — first truncating each path's detail (with a link to the workflow run), then to a summary-only comment. The full, untruncated output is always written to each run job's **Job Summary** (`$GITHUB_STEP_SUMMARY`), which the fallback link points to.
+- `gh-scripts/post-comment.mjs`: Utility script for posting comments to Pull Requests. It handles formatting of `terraform plan` and `terraform apply` results, and aggregating reports from multiple matrix jobs. The full output is posted inline when it fits the comment size budget. Oversized output falls back gracefully — first truncating each path's detail, then keeping only the summary, and finally truncating the summary table itself with an omission row. Fallback comments include a link to the workflow run summary, and comments always stay within the size limit. Each run job's **Job Summary** (`$GITHUB_STEP_SUMMARY`) contains plan/apply output truncated at approximately 900 KB per root to respect GitHub's Job Summary limit. Complete `plan.txt` / `apply.txt` files are included in the run artifacts, which are retained for 1 day.
 
 ## GitHub Scripts CLI
 
@@ -149,7 +157,9 @@ node .github/tfman/cli/index.mjs generate-deps [--output <path>] [--ignore-file 
 - `--ignore-file`: Path to the ignore file (Default: `.tfdepsignore` in workspace root).
 - `--root`: Path to the root directory to scan (Default: workspace root).
 
-**Note:** If you encounter errors during dependency generation, run `terraform init` in each Terraform root directory before running this command.
+**Note:** `generate-deps` uses `terraform modules -json` (Terraform 1.10+). Only when Terraform reports that the `modules` subcommand does not exist, it falls back to the `.terraform/modules/modules.json` manifest written by `terraform init`, so run `terraform init` in those roots first. If module or provider extraction fails for any root, the command exits non-zero and does not write a partial `.tfdeps.json`.
+
+**Side effects:** for every root that has no `.terraform/` directory, the command runs `terraform init -backend=false -input=false` in that root, which downloads providers and modules and may take a while on first run. Roots that already have a `.terraform/` directory are used as-is; if that directory is stale (e.g. a module `source` changed but `init` was not re-run), delete it or run `terraform init` in that root before regenerating.
 
 #### 2. `detect-changes`
 
@@ -162,8 +172,8 @@ node .github/tfman/cli/index.mjs detect-changes --base <sha> --head <sha> [--dep
 
 - `--base`: Base commit SHA.
 - `--head`: Head commit SHA.
-- `--deps-file`: Path to the dependency graph file (Default: `.tfdeps.json`).
-- `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints JSON to stdout.
+- `--deps-file`: Path to the dependency graph file (Default: `.tfdeps.json` in the workspace root). If a path is given explicitly and is empty or cannot be read, the command exits with an error instead of falling back to the default.
+- `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints the bare array (`[{ "path": ..., "providers": [...] }, ...]`) to stdout without the `include` wrapper, so callers that pipe stdout into a matrix must wrap it themselves (the workflows do this with `jq '{include: .}'`). Any failure exits non-zero with the error on stderr.
 
 #### 3. `select-targets`
 
@@ -175,7 +185,7 @@ node .github/tfman/cli/index.mjs select-targets --targets "dir1 dir2" [--output 
 ```
 
 - `--targets`: Space-separated list of target directories.
-- `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints JSON to stdout.
+- `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints the bare array (`[{ "path": ..., "providers": [...] }, ...]`) to stdout without the `include` wrapper, so callers that pipe stdout into a matrix must wrap it themselves (the workflows do this with `jq '{include: .}'`). Any failure exits non-zero with the error on stderr.
 
 #### 4. `operate-command`
 
@@ -189,10 +199,22 @@ node .github/tfman/cli/index.mjs operate-command \
   --head-sha <sha>
 ```
 
+**Output contract:** the command always prints a single JSON object to stdout and exits 0, even when the comment is invalid or no targets match — the workflow reads `done` and `message` to decide whether to post a reply instead of relying on the exit code:
+
+```json
+{ "command": "plan" | "apply" | "help" | "error", "targetDirs": [...], "tfTargets": [...], "message": "...", "done": true | false }
+```
+
+- `done: true` means there is nothing to execute (help, parse error, or no matching targets) and `message` should be posted to the PR as-is. The CLI never checks permissions; the workflow rejects unauthorised `apply` after parsing, before any Terraform code runs.
+- Only the **first line** of the comment body is parsed; anything after the first newline is ignored.
+- A non-zero exit happens only for missing required arguments or an internal failure.
+
 ### Configuration Files
 
 #### `.tfdeps.json`
 Generated by `generate-deps`. Maps each Terraform root to its local module dependencies and provider requirements.
+
+Only modules that resolve to a directory inside this repository are recorded as dependencies: relative `source` paths (`./…`, `../…`) and `git::` / `github.com/…` sources whose host, owner and repository name exactly match the `origin` remote and that are not pinned with `?ref=`. Modules from other repositories, registry modules, and ref-pinned sources are not tracked, because changes in this working tree do not affect them.
 
 #### `.tfdepsignore`
 Dependency scanning ignore rules.
@@ -200,6 +222,8 @@ Dependency scanning ignore rules.
 - Format: whitespace-separated patterns. **Recommended:** one pattern per line.
 - Blank lines are ignored.
 - Lines starting with `#` are treated as comments.
+- Patterns are **not** globs (`*` and `?` have no special meaning). A pattern matches a directory when it equals the directory's name at any depth (`node_modules` skips every `node_modules/`), or when it equals or is a path prefix of the directory's path relative to the workspace root (`envs/legacy` skips `envs/legacy/` and everything under it, but not `envs/legacy-v2/`).
+- Matched directories are skipped entirely, including any Terraform roots inside them.
 
 Example:
 

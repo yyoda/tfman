@@ -3,6 +3,25 @@ import assert from 'node:assert';
 import { PlanCommentBuilder, ApplyCommentBuilder } from '../../lib/comment-builder.mjs';
 
 describe('ApplyCommentBuilder', () => {
+
+  it('should truncate oversized summary tables with an omission row', () => {
+    const builder = new ApplyCommentBuilder();
+    const runUrl = 'https://example.invalid/r/1';
+    const paths = Array.from({ length: 300 }, (_, i) =>
+      `environments/very-long-environment-name-${String(i).padStart(3, '0')}/stack`);
+    for (const path of paths) {
+      builder.addResult(path, 'Apply complete! Resources: 1 added, 0 changed, 0 destroyed.', 'success');
+    }
+
+    const comment = builder.buildComment({ runUrl, maxCommentLength: 5000, perPathBudget: 100 });
+    assert.ok(comment.length <= 5000, `Comment length ${comment.length} should be <= 5000`);
+    assert.ok(comment.includes(ApplyCommentBuilder.COMMENT_HEADER));
+    assert.ok(comment.includes(paths[0]));
+    assert.ok(!comment.includes(paths[paths.length - 1]));
+    assert.ok(comment.includes('more paths omitted'));
+    assert.ok(comment.includes(`[workflow run summary](${runUrl})`));
+  });
+
     it('should return empty string when no results', () => {
         const builder = new ApplyCommentBuilder();
         assert.strictEqual(builder.buildComment(), '');
@@ -109,6 +128,66 @@ Apply failed.
 
 describe('PlanCommentBuilder', () => {
 
+  it('should truncate oversized summary tables with an omission row', () => {
+    const builder = new PlanCommentBuilder();
+    const runUrl = 'https://example.invalid/r/1';
+    const paths = Array.from({ length: 300 }, (_, i) =>
+      `environments/very-long-environment-name-${String(i).padStart(3, '0')}/stack`);
+    for (const path of paths) {
+      builder.addResult(path, 'Plan: 1 to add, 0 to change, 0 to destroy.', 'success');
+    }
+
+    const comment = builder.buildComment({ runUrl, maxCommentLength: 5000, perPathBudget: 100 });
+    assert.ok(comment.length <= 5000, `Comment length ${comment.length} should be <= 5000`);
+    assert.ok(comment.includes(PlanCommentBuilder.COMMENT_HEADER));
+    assert.ok(comment.includes(paths[0]));
+    assert.ok(!comment.includes(paths[paths.length - 1]));
+    assert.ok(comment.includes('more paths omitted'));
+    assert.ok(comment.includes(`[workflow run summary](${runUrl})`));
+  });
+
+
+  it('should include failed plan output in details', () => {
+    const builder = new PlanCommentBuilder();
+    builder.addResult('env/a', 'Error: something broke', 'failure');
+    const comment = builder.buildComment();
+    assert.ok(comment.includes('| `env/a` | ❌ | Plan Failed |'));
+    assert.ok(comment.includes('<details>'));
+    assert.ok(comment.includes('Error: something broke'));
+  });
+
+  it('should report missing plan output as failure', () => {
+    const builder = new PlanCommentBuilder();
+    builder.addResult('env/b', '(Log file not found)', 'failure');
+    const comment = builder.buildComment();
+    assert.ok(comment.includes('| `env/b` | ❌ | Plan Failed |'));
+    assert.ok(!comment.includes('No changes detected'));
+  });
+
+  it('should report output-only changes with details', () => {
+    const builder = new PlanCommentBuilder();
+    builder.addResult('env/outputs', `Changes to Outputs:
+  + endpoint = "https://example.invalid"
+
+You can apply this plan to save these new output values to the Terraform state, without changing any real infrastructure.`);
+    const comment = builder.buildComment();
+    assert.ok(comment.includes('| `env/outputs` | ⚠️ | outputs changed |'));
+    assert.ok(comment.includes('<details>'));
+    assert.ok(!comment.includes('No changes detected'));
+  });
+
+  it('should combine resource and output changes', () => {
+    const builder = new PlanCommentBuilder();
+    builder.addResult('env/both', 'Plan: 1 to add, 0 to change, 0 to destroy.\nChanges to Outputs:');
+    assert.ok(builder.buildComment().includes('+1 add, outputs changed'));
+  });
+
+  it('should default omitted outcome to success', () => {
+    const builder = new PlanCommentBuilder();
+    builder.addResult('env/default', 'Plan: 1 to add, 0 to change, 0 to destroy.');
+    assert.ok(builder.buildComment().includes('| `env/default` | ⚠️ | +1 add |'));
+  });
+
   it('No changes: omits the details block', () => {
     const builder = new PlanCommentBuilder();
     builder.addResult('path/to/module-1', 'No changes. Infrastructure is up-to-date.');
@@ -208,4 +287,19 @@ Plan: 2 to import, 4 to add, 11 to change, 1 to destroy.
     const builder = new PlanCommentBuilder();
     assert.strictEqual(builder.buildComment(), '');
   });
+});
+
+it('reports output changes even when an output contains No changes.', () => {
+  const builder = new PlanCommentBuilder();
+  builder.addResult('env/outputs', 'Changes to Outputs:\n  + message = "No changes."', 'success');
+  const comment = builder.buildComment();
+  assert.ok(comment.includes('| `env/outputs` | ⚠️ | outputs changed |'));
+  assert.ok(comment.includes('<details>'));
+  assert.ok(comment.includes('message = "No changes."'));
+});
+
+it('prioritizes a Plan summary over a No changes line', () => {
+  const builder = new PlanCommentBuilder();
+  builder.addResult('env/resources', 'No changes.\nPlan: 1 to add, 0 to change, 0 to destroy.', 'success');
+  assert.ok(builder.buildComment().includes('| `env/resources` | ⚠️ | +1 add |'));
 });

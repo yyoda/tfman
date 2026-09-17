@@ -98,6 +98,48 @@ describe('lib/ops/command-parser', () => {
       assert.deepStrictEqual(result.tfTargets, ['aws_instance.web[0]']);
     });
 
+    for (const address of [
+      'aws_instance.web["blue"]',
+      'aws_route53_record.r["www.example.com"]',
+      'aws_iam_role_policy_attachment.a["arn:aws:iam::123456789012:policy/x"]',
+      'data.aws_ami.ubuntu',
+      'aws_instance.web["a..b@example.com"]',
+    ]) {
+      it(`should accept -target=${address}`, () => {
+        const result = parseCommand(`$terraform plan -target=${address}`);
+        assert.strictEqual(result.command, 'plan');
+        assert.deepStrictEqual(result.targetDirs, []);
+        assert.deepStrictEqual(result.tfTargets, [address]);
+      });
+    }
+
+    it('should accept an indexed module resource in space-separated -target', () => {
+      const address = 'module.app["prod"].aws_instance.web[0]';
+      const result = parseCommand(`$terraform apply -target ${address}`);
+      assert.strictEqual(result.command, 'apply');
+      assert.deepStrictEqual(result.targetDirs, []);
+      assert.deepStrictEqual(result.tfTargets, [address]);
+    });
+
+    for (const address of [
+      'aws_instance.web[blue]',
+      'aws_instance.web["a"b"]',
+      'aws_instance..web',
+      'aws_instance.web[]',
+      '-aws.x',
+      '',
+      'aws_instance.web[""]',
+      String.raw`aws_instance.web["a\b"]`,
+      'aws_instance.web[-1]',
+      'aws_instance.web[0][1]',
+    ]) {
+      it(`should reject invalid -target=${address}`, () => {
+        const result = parseCommand(`$terraform plan -target=${address}`);
+        assert.strictEqual(result.command, 'error');
+        assert.match(result.message, /Invalid -target resource address/);
+      });
+    }
+
     it('should reject directory traversal in -target resource address', () => {
       const result = parseCommand('$terraform plan -target=../../etc/passwd');
       assert.strictEqual(result.command, 'error');

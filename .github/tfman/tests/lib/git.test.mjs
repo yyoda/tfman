@@ -8,7 +8,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { runGitDiff } from '../../lib/git.mjs';
+import { runGitDiff, normalizeRepoIdentity } from '../../lib/git.mjs';
 import { runCommand } from '../../lib/utils.mjs';
 
 describe('runGitDiff', () => {
@@ -64,4 +64,74 @@ describe('runGitDiff', () => {
       (error) => error instanceof Error && error.message.startsWith('Error running git diff')
     );
   });
+});
+
+describe('runGitDiff path handling', () => {
+  let repoDir;
+  let mainSha;
+  let renameSha;
+  let featureSha;
+  const specialPath = 'envs/dev/日本語 ファイル.tf';
+
+  before(async () => {
+    repoDir = await mkdtemp(join(tmpdir(), 'tfman-git-paths-'));
+    await runCommand('git', ['init', '-q', '-b', 'main'], { cwd: repoDir });
+    await runCommand('git', ['config', 'user.name', 'Test User'], { cwd: repoDir });
+    await runCommand('git', ['config', 'user.email', 'test@example.com'], { cwd: repoDir });
+    await runCommand('git', ['config', 'core.quotePath', 'true'], { cwd: repoDir });
+    await mkdir(join(repoDir, 'envs/dev'), { recursive: true });
+    await writeFile(join(repoDir, 'envs/dev/main.tf'), '# Dev environment\n');
+    await runCommand('git', ['add', 'envs/dev/main.tf'], { cwd: repoDir });
+    await runCommand('git', ['commit', '-q', '-m', 'Add dev environment'], { cwd: repoDir });
+    mainSha = (await runCommand('git', ['rev-parse', 'HEAD'], { cwd: repoDir })).stdout.trim();
+
+    await runCommand('git', ['checkout', '-q', '-b', 'feature'], { cwd: repoDir });
+    await mkdir(join(repoDir, 'envs/prod'), { recursive: true });
+    await runCommand('git', ['mv', 'envs/dev/main.tf', 'envs/prod/main.tf'], { cwd: repoDir });
+    await runCommand('git', ['commit', '-q', '-m', 'Move dev to prod'], { cwd: repoDir });
+    renameSha = (await runCommand('git', ['rev-parse', 'HEAD'], { cwd: repoDir })).stdout.trim();
+
+    await mkdir(join(repoDir, 'envs/dev'), { recursive: true });
+    await writeFile(join(repoDir, specialPath), '# Special filename\n');
+    await runCommand('git', ['add', specialPath], { cwd: repoDir });
+    await runCommand('git', ['commit', '-q', '-m', 'Add special filename'], { cwd: repoDir });
+    featureSha = (await runCommand('git', ['rev-parse', 'HEAD'], { cwd: repoDir })).stdout.trim();
+  });
+
+  after(async () => {
+    if (repoDir) {
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports both source and destination paths for a rename', async () => {
+    assert.deepStrictEqual((await runGitDiff(mainSha, renameSha, repoDir)).sort(), [
+      'envs/dev/main.tf',
+      'envs/prod/main.tf',
+    ]);
+  });
+
+  it('preserves non-ASCII characters and spaces without quoting paths', async () => {
+    assert.deepStrictEqual(await runGitDiff(renameSha, featureSha, repoDir), [specialPath]);
+  });
+});
+
+describe('normalizeRepoIdentity', () => {
+  for (const url of [
+    'https://github.com/ORG/REPO.git',
+    'git@github.com:org/repo.git',
+    'ssh://git@github.com/org/repo',
+    'github.com/org/repo',
+    'git::https://github.com/org/repo.git//modules/x?ref=v1',
+    'ssh://git@github.com:22/org/repo',
+    'https://user:token@github.com/org/repo.git',
+    'git::ssh://git@github.com:22/org/repo.git//modules/x?ref=v1',
+  ]) {
+    it(`normalizes ${url}`, () => {
+      assert.strictEqual(normalizeRepoIdentity(url), 'github.com/org/repo');
+    });
+  }
+  for (const url of [null, '', 'repo', 'github.com/repo', 'https://github.com/org']) {
+    it(`rejects ${url}`, () => assert.strictEqual(normalizeRepoIdentity(url), null));
+  }
 });

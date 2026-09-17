@@ -59,7 +59,7 @@ environments/prod-us  │ +2 to add, ~1 to change, 0 to destroy
 environments/staging  │ +2 to add, ~1 to change, 0 to destroy
 ```
 
-Collapsible details. Change counts at a glance. Large outputs split across multiple comments automatically. Infrastructure review becomes as natural as code review.
+Collapsible details. Change counts at a glance. Oversized output degrades gracefully instead of failing: details are truncated first, then summarized, with a link to the workflow run summary, which holds up to about 900 KB per root; the complete `plan.txt`/`apply.txt` files are in the run artifacts (retained for 1 day). Infrastructure review becomes as natural as code review.
 
 ### ChatOps — Apply from the PR Comment Thread
 
@@ -78,7 +78,7 @@ $terraform help
 
 The pipeline parses the command, validates the targets, checks permissions, executes the operation, and posts the result — all in the same thread. Full audit trail in the PR history.
 
-Note: directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to the repository root). Resource addresses for `-target` follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`). Both `-target=<resource>` and `-target <resource>` (space-separated) forms are supported.
+Note: directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to the repository root). Resource addresses for `-target` follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`, `aws_instance.web["blue"]`). Both `-target=<resource>` and `-target <resource>` (space-separated) forms are supported.
 
 ### Role-Based Access Control — Not Everyone Should Apply
 
@@ -93,7 +93,7 @@ Note: `APPLIERS` is a repo-wide allowlist (coarse-grained). If you need per-envi
 
 ### OIDC Authentication — No Long-Lived Credentials
 
-Every environment authenticates to its cloud provider using OIDC. No static AWS access keys. No service account JSON files rotting in secrets. Each environment's `.env` (in `.github/env.d/`) specifies exactly which IAM role to assume, which subscription to target, which project to use.
+Every environment authenticates to its cloud provider using OIDC. No static AWS access keys. No service account JSON files rotting in secrets. Each environment's `.env` (in `.github/env.d/`) specifies exactly which IAM role to assume, which subscription to target, which workload identity provider and service account to use.
 
 Multi-account AWS? Each environment assumes its own role. Multi-cloud? Each environment configures its own provider. The pipeline detects the required provider from the dependency graph and sets up authentication automatically.
 
@@ -244,10 +244,18 @@ Run once to scan all Terraform roots and build the dependency graph:
 node .github/tfman/cli/index.mjs generate-deps
 ```
 
-Commit the generated `.tfdeps.json`. Re-run whenever you add or remove an environment directory.
+Commit the generated `.tfdeps.json`. Re-run whenever the graph inputs change:
+
+- a Terraform root is added, removed, or moved
+- a root starts or stops using a local module (any `module` block whose `source` points inside the repository)
+- a root's provider set changes (a provider is added to or removed from `.terraform.lock.hcl`)
+
+Git module sources are matched against the host, owner and repository name of the `origin` remote; sources pinned with `?ref=` are excluded.
+
+Change detection and cloud authentication read this file, so a stale graph means a changed module may not trigger its consumers, or a root may run without the credentials its new provider needs.
 
 > [!NOTE]
-> If you encounter errors during dependency generation, run `terraform init` in each Terraform root directory before running this command.
+> `generate-deps` uses `terraform modules -json` (Terraform 1.10+). Only when Terraform reports that the `modules` subcommand does not exist, it falls back to the `.terraform/modules/modules.json` manifest written by `terraform init`, so run `terraform init` in those roots first. If module or provider extraction fails for any root, the command exits non-zero and does not write a partial `.tfdeps.json`.
 
 > [!TIP]
 > For reproducible provider selection (and better CI caching), commit each root's `.terraform.lock.hcl` after running `terraform init`.
@@ -265,6 +273,8 @@ Go to **Settings > Secrets and variables > Actions > Variables** and create `APP
 ```
 
 Users not listed default to `planner` (plan only). If `APPLIERS` is not set, apply operations are blocked for all users.
+
+`plan` runs with the same cloud identity as `apply` unless the OIDC role's trust policy / permissions are scoped; use a read-only role or a separate role for plan where possible.
 
 > [!IMPORTANT]
 > The `applier` role is required for `ManualOps` and `PRComment` workflows to execute `apply`.

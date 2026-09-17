@@ -27,4 +27,31 @@ describe('select-targets', () => {
         deepStrictEqual(includeList, []);
         deepStrictEqual(failedTargets, ['foo']);
     });
+
+    it('should deduplicate normalized targets', () => {
+        const { includeList, failedTargets } = resolveTargets(['app1', 'app1/', './app1'], depsData);
+        deepStrictEqual(includeList, [{ path: 'app1', providers: ['aws'] }]);
+        deepStrictEqual(failedTargets, []);
+    });
+
+    it('should normalize leading dot slash and trailing slash', () => {
+        const { includeList, failedTargets } = resolveTargets(['./app2/'], depsData);
+        deepStrictEqual(includeList, [{ path: 'app2', providers: ['google'] }]);
+        deepStrictEqual(failedTargets, []);
+    });
+
+    it('should preserve first-occurrence order', () => {
+        const { includeList, failedTargets } = resolveTargets(['app1', 'app2', 'app1'], depsData);
+        deepStrictEqual(includeList, [
+            { path: 'app1', providers: ['aws'] },
+            { path: 'app2', providers: ['google'] }
+        ]);
+        deepStrictEqual(failedTargets, []);
+    });
+
+    it('should deduplicate failed targets by normalized path', () => {
+        const { includeList, failedTargets } = resolveTargets(['foo', 'foo/', 'app1'], depsData);
+        deepStrictEqual(includeList, [{ path: 'app1', providers: ['aws'] }]);
+        deepStrictEqual(failedTargets, ['foo']);
+    });
 });

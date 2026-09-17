@@ -3,7 +3,7 @@ import { runCommand as defaultRunCommand, getWorkspaceRoot as defaultGetWorkspac
 import { logger as defaultLogger } from '../../lib/logger.mjs';
 import { generateDependencyGraph as defaultGenerateDependencyGraph } from '../../lib/ops/deps-generator.mjs';
 import { loadIgnorePatterns as defaultLoadIgnorePatterns } from '../../lib/ops/deps-generator.mjs';
-import { getRepoName as defaultGetRepoName } from '../../lib/git.mjs';
+import { getRepoIdentity as defaultGetRepoIdentity } from '../../lib/git.mjs';
 import { writeFile as defaultWriteFile } from 'node:fs/promises';
 
 export async function run(args, dependencies = {}) {
@@ -12,7 +12,7 @@ export async function run(args, dependencies = {}) {
       loadIgnorePatterns = defaultLoadIgnorePatterns,
       runCommand = defaultRunCommand,
       getWorkspaceRoot = defaultGetWorkspaceRoot,
-      getRepoName = defaultGetRepoName,
+      getRepoIdentity = defaultGetRepoIdentity,
       logger = defaultLogger,
       writeFile = defaultWriteFile
   } = dependencies;
@@ -36,11 +36,10 @@ export async function run(args, dependencies = {}) {
   const { results, roots } = await generateDependencyGraph(root, ignorePatterns);
 
   if (roots) {
-      // const repoName = await getRepoName(root); // Use dependency
-      if (typeof getRepoName === 'function') {
-        const repoName = await getRepoName(root);
-        if (repoName) {
-          logger.info(`Detected repository name: ${repoName}`);
+      if (typeof getRepoIdentity === 'function') {
+        const repoIdentity = await getRepoIdentity(root);
+        if (repoIdentity) {
+          logger.info(`Detected repository identity: ${repoIdentity}`);
         }
       }
   }

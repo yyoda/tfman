@@ -13,12 +13,9 @@ export async function run(args, dependencies = {}) {
   const { base, head, 'deps-file': depsFile, output } = args;
 
   let dependencyGraph = null;
-  if (depsFile) {
-      try {
-          dependencyGraph = await loadJson(depsFile);
-      } catch (error) {
-          console.warn(`Warning: Could not load dependency graph from ${depsFile}`, error.message);
-      }
+  if (depsFile === true) throw new Error('--deps-file requires a path');
+  if (depsFile !== undefined) {
+      dependencyGraph = await loadJson(depsFile);
   }
 
   const result = await detectChanges(base, head, dependencyGraph);

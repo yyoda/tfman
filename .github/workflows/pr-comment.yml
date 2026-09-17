@@ -9,16 +9,14 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  id-token: write
   contents: read
-  pull-requests: write
-  statuses: write
 
 env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
   authorize:
+    permissions: {}
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '$terraform')
@@ -32,7 +30,7 @@ jobs:
           ACTOR: ${{ github.event.comment.user.login }}
           APPLIERS: ${{ vars.APPLIERS }}
         run: |
-          if echo "$APPLIERS" | jq -e --arg actor "$ACTOR" 'contains([$actor])' > /dev/null 2>&1; then
+          if echo "$APPLIERS" | jq -e --arg actor "$ACTOR" 'any(.[]; . == $actor)' > /dev/null 2>&1; then
             ROLES='["applier"]'
           else
             ROLES='["planner"]'
@@ -40,13 +38,16 @@ jobs:
           echo "roles=$ROLES" >> $GITHUB_OUTPUT
 
   setup:
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
     needs: authorize
     runs-on: ubuntu-latest
     outputs:
       command: ${{ steps.set-matrix.outputs.command }}
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       tf_targets_json: ${{ steps.set-matrix.outputs.tf_targets_json }}
-      ref: ${{ steps.pr-details.outputs.ref }}
       head_sha: ${{ steps.pr-details.outputs.head_sha }}
       done: ${{ steps.set-matrix.outputs.done }}
     steps:
@@ -67,16 +68,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Get PR info (headRefName, baseRefOid, headRefOid)
-          PR_DATA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json headRefName,baseRefOid,headRefOid)
-          echo "ref=$(echo $PR_DATA | jq -r .headRefName)" >> $GITHUB_OUTPUT
+          # Get PR info (baseRefOid, headRefOid)
+          PR_DATA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json baseRefOid,headRefOid)
           echo "base_sha=$(echo $PR_DATA | jq -r .baseRefOid)" >> $GITHUB_OUTPUT
           echo "head_sha=$(echo $PR_DATA | jq -r .headRefOid)" >> $GITHUB_OUTPUT
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ steps.pr-details.outputs.ref }}
           fetch-depth: 0
+
+      - name: Fetch PR Head
+        env:
+          PR_NUMBER: ${{ github.event.issue.number }}
+          HEAD_SHA: ${{ steps.pr-details.outputs.head_sha }}
+        run: |
+          git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
+          git cat-file -e "${HEAD_SHA}^{commit}"
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -89,7 +96,12 @@ jobs:
           COMMENT_BODY: ${{ github.event.comment.body }}
           BASE_SHA: ${{ steps.pr-details.outputs.base_sha }}
           HEAD_SHA: ${{ steps.pr-details.outputs.head_sha }}
+          ROLES: ${{ needs.authorize.outputs.roles }}
+          ACTOR: ${{ github.event.comment.user.login }}
         run: |
+          if git cat-file -e "${HEAD_SHA}:.tfdeps.json" 2>/dev/null; then
+            git show "${HEAD_SHA}:.tfdeps.json" > .tfdeps.json
+          fi
           RESULT=$(node .github/tfman/cli/index.mjs operate-command \
             --comment-body "$COMMENT_BODY" \
             --base-sha "$BASE_SHA" \
@@ -102,17 +114,22 @@ jobs:
             MATRIX=""
           fi
           TF_TARGETS_JSON=$(echo "$RESULT" | jq -c '.tfTargets // []')
+          COMMAND=$(echo "$RESULT" | jq -r '.command')
+          DONE=$(echo "$RESULT" | jq -r '.done // empty')
+          MESSAGE=$(echo "$RESULT" | jq -r '.message')
+          if [ "$COMMAND" == "apply" ] && ! echo "$ROLES" | jq -e 'any(.[]; . == "applier")' > /dev/null; then
+            MATRIX=""
+            DONE=true
+            MESSAGE="User ${ACTOR} does not have permission to apply. Required role: applier."
+          fi
           echo "tf_targets_json=$TF_TARGETS_JSON" >> $GITHUB_OUTPUT
           {
             echo "matrix<<EOF"
             echo "$MATRIX"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-          COMMAND=$(echo "$RESULT" | jq -r '.command')
           echo "command=$COMMAND" >> $GITHUB_OUTPUT
-          DONE=$(echo "$RESULT" | jq -r '.done // empty')
           echo "done=$DONE" >> $GITHUB_OUTPUT
-          MESSAGE=$(echo "$RESULT" | jq -r '.message')
           {
             echo "message<<EOF"
             echo "$MESSAGE"
@@ -145,6 +162,9 @@ jobs:
             });
 
   run:
+    permissions:
+      id-token: write
+      contents: read
     needs: [authorize, setup]
     if: needs.setup.outputs.done != 'true' && needs.setup.outputs.matrix != '' && fromJson(needs.setup.outputs.matrix).include[0] != null
     runs-on: ubuntu-latest
@@ -160,7 +180,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.setup.outputs.ref }}
+          ref: ${{ needs.setup.outputs.head_sha }}
 
       - name: Create Cache Dir
         run: mkdir -p $TF_PLUGIN_CACHE_DIR
@@ -230,8 +250,9 @@ jobs:
               TARGET_FLAGS+=("-target=$addr")
             done < <(echo "$TF_TARGETS_JSON" | jq -r '.[]')
           fi
-          # Generate plan binary
-          terraform plan -input=false -out=tfplan "${TARGET_FLAGS[@]}"
+          set -o pipefail
+          # Keep the raw output (including errors) as plan.txt until the canonical rendering replaces it
+          terraform plan -input=false -no-color -out=tfplan "${TARGET_FLAGS[@]}" 2>&1 | tee plan.txt
           # Display with color in logs
           terraform show tfplan
           # Save plain text for comment
@@ -245,7 +266,7 @@ jobs:
           ACTOR: ${{ github.event.comment.user.login }}
           TF_TARGETS_JSON: ${{ needs.setup.outputs.tf_targets_json }}
         run: |
-          if ! echo "$ROLES" | jq -e 'contains(["applier"])' > /dev/null; then
+          if ! echo "$ROLES" | jq -e 'any(.[]; . == "applier")' > /dev/null; then
             echo "User $ACTOR does not have permission to apply. Required role: applier."
             exit 1
           fi
@@ -283,7 +304,7 @@ jobs:
       - name: Create Artifact Metadata
         if: always()
         run: |
-          CLEAN_PATH=$(echo "${{ matrix.path }}" | tr '/' '-')
+          CLEAN_PATH="$(echo "${{ matrix.path }}" | tr '/' '-')-$(printf '%s' "${{ matrix.path }}" | sha256sum | cut -c1-8)"
           COMMAND="${{ needs.setup.outputs.command }}"
 
           # Determine outcome based on steps
@@ -310,13 +331,18 @@ jobs:
           retention-days: 1
 
   post-run:
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
     needs: [setup, run]
-    if: "!cancelled() && needs.setup.result != 'skipped' && needs.setup.outputs.done != 'true'"
+    if: always() && needs.setup.result == 'success' && needs.setup.outputs.done != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
       - name: Download Artifacts
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           pattern: ${{ needs.setup.outputs.command }}-*
@@ -324,6 +350,7 @@ jobs:
           merge-multiple: false
 
       - name: Update Commit Status
+        if: always()
         uses: actions/github-script@v8
         env:
           COMMAND: ${{ needs.setup.outputs.command }}
@@ -337,18 +364,21 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: process.env.HEAD_SHA,
-              state: (result === 'success' || result === 'skipped') ? 'success' : 'failure',
+              state: (result === 'success' || result === 'skipped') ? 'success' : result === 'cancelled' ? 'error' : 'failure',
               context: `terraform/${command}`,
-              description: result === 'success' ? 'All Terraform jobs passed' : 'Some Terraform jobs failed',
+              description: result === 'cancelled' ? `Terraform ${command} was cancelled` : result === 'success' ? 'All Terraform jobs passed' : 'Some Terraform jobs failed',
               target_url: `${context.payload.repository.html_url}/actions/runs/${context.runId}`
             });
 
       - name: Post Command Execution Result
+        if: always()
         uses: actions/github-script@v8
         env:
+          MATRIX: ${{ needs.setup.outputs.matrix }}
           COMMAND: ${{ needs.setup.outputs.command }}
         with:
           script: |
             const command = process.env.COMMAND;
+            const expectedPaths = process.env.MATRIX ? JSON.parse(process.env.MATRIX).include.map(i => i.path) : [];
             const { default: script } = await import('${{ github.workspace }}/.github/tfman/gh-scripts/post-comment.mjs');
-            await script({ github, context, core, glob }, { mode: command, deletePreviousComments: command === 'plan' });
+            await script({ github, context, core, glob }, { expectedPaths, mode: command, deletePreviousComments: command === 'plan' });

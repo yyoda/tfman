@@ -15,24 +15,20 @@ export function resolveTargets(targets, depsData) {
 
   const includeList = [];
   const failedTargets = [];
+  const seen = new Set();
 
   for (const t of targets) {
-    if (dirsMap.has(t)) {
+    const normalized = t.replace(/^\.\//, '').replace(/\/+$/, '');
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+
+    if (dirsMap.has(normalized)) {
       includeList.push({
-        path: t,
-        providers: dirsMap.get(t)
+        path: normalized,
+        providers: dirsMap.get(normalized)
       });
     } else {
-      // Try stripping trailing slash
-      const tStripped = t.replace(/\/$/, '');
-      if (dirsMap.has(tStripped)) {
-        includeList.push({
-          path: tStripped,
-          providers: dirsMap.get(tStripped)
-        });
-      } else {
-        failedTargets.push(t);
-      }
+      failedTargets.push(t);
     }
   }
 

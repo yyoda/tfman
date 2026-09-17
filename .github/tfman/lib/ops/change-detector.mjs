@@ -5,6 +5,7 @@ import { runGitDiff } from '../git.mjs';
 
 /**
  * Calculates which Terraform roots need execution based on changed files and dependency graph.
+ * Root matching uses longest-prefix-match; module matching is performed independently.
  * @param {string[]} changedFiles - List of changed files.
  * @param {Object} depsData - The dependency graph data.
  * @returns {Array<{path: string, providers: string[]}>} - List of roots to execute.
@@ -32,6 +33,8 @@ export function calculateExecutionPaths(changedFiles, depsData) {
     }
   }
 
+  const sortedRoots = Array.from(knownRoots).sort((a, b) => b.length - a.length);
+
   // Sort modules descending by length to match longest path first
   const sortedModules = Array.from(moduleUsageMap.keys()).sort((a, b) => b.length - a.length);
 
@@ -41,16 +44,12 @@ export function calculateExecutionPaths(changedFiles, depsData) {
   // Identify changed roots and modules
   for (const file of changedFiles) {
     // Check if file is inside a known root
-    let isRootChange = false;
-    for (const root of knownRoots) {
+    for (const root of sortedRoots) {
       if (file.startsWith(root + '/')) {
         affectedRoots.add(root);
-        isRootChange = true;
         break;
       }
     }
-
-    if (isRootChange) continue;
 
     // Check if file is inside a known module
     for (const mod of sortedModules) {

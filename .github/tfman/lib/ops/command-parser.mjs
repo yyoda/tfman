@@ -1,3 +1,8 @@
+const IDENT = String.raw`[A-Za-z_][\w-]*`;
+const INDEX = String.raw`\[(?:[0-9]+|"[^"\\]+")\]`;
+const SEGMENT = `${IDENT}(?:${INDEX})?`;
+const RESOURCE_ADDRESS = new RegExp(`^${SEGMENT}(?:\\.${SEGMENT})*$`);
+
 function getHelpMessage() {
   return `
 ### :robot: Terraform Bot Usage
@@ -13,7 +18,7 @@ function getHelpMessage() {
 
 **-target (Terraform resource targeting):**
 - Restrict plan/apply to specific Terraform resources.
-- Accepts standard Terraform resource addresses (e.g., \`aws_instance.example\`, \`module.frontend\`).
+- Accepts standard Terraform resource addresses (e.g., \`aws_instance.example\`, \`module.frontend\`, \`aws_instance.web[0]\`, \`aws_instance.web["blue"]\`).
 - Both \`-target=<resource>\` and \`-target <resource>\` (space-separated) forms are supported.
 - Multiple \`-target\` flags can be specified.
 
@@ -84,12 +89,12 @@ export function parseCommand(commentBody) {
     }
 
     if (resourceAddr !== null) {
-      if (!/^[\w.\-\[\]]+$/.test(resourceAddr) || /\.\./.test(resourceAddr)) {
+      if (!RESOURCE_ADDRESS.test(resourceAddr)) {
         return {
           command: 'error',
           targetDirs: [],
           tfTargets: [],
-          message: `Invalid -target resource address: "${resourceAddr}". Only alphanumeric characters, "-", ".", "_", "[", and "]" are allowed. Directory traversal ".." is invalid.`
+          message: `Invalid -target resource address: "${resourceAddr}". Expected a Terraform resource address such as aws_instance.web, module.vpc, aws_instance.web[0], or aws_instance.web["blue"].`
         };
       }
       tfTargets.push(resourceAddr);

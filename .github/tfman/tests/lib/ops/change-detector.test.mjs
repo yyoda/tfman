@@ -15,6 +15,57 @@ describe('detect-changes', () => {
         ]
     };
 
+    it('should match the deepest root regardless of directory order', () => {
+        const dirs = [
+            { path: 'envs/prod', providers: ['aws'] },
+            { path: 'envs/prod/dns', providers: ['google'] }
+        ];
+        for (const orderedDirs of [dirs, [...dirs].reverse()]) {
+            for (const root of dirs) {
+                const result = calculateExecutionPaths([`${root.path}/main.tf`], { dirs: orderedDirs });
+                deepStrictEqual(result.sort((a, b) => a.path.localeCompare(b.path)), [root]);
+            }
+        }
+    });
+
+    it('should propagate module changes inside a root to consumers', () => {
+        const result = calculateExecutionPaths(['envs/prod/modules/x/main.tf'], {
+            dirs: [
+                { path: 'envs/prod', providers: ['aws'] },
+                { path: 'envs/dev', providers: ['google'] }
+            ],
+            modules: [{ source: 'envs/prod/modules/x', usedIn: ['envs/dev'] }]
+        });
+        deepStrictEqual(result.sort((a, b) => a.path.localeCompare(b.path)), [
+            { path: 'envs/dev', providers: ['google'] },
+            { path: 'envs/prod', providers: ['aws'] }
+        ]);
+    });
+
+    it('should propagate changes when a root is used as a module', () => {
+        const result = calculateExecutionPaths(['envs/base/main.tf'], {
+            dirs: [
+                { path: 'envs/base', providers: ['aws'] },
+                { path: 'envs/prod', providers: ['google'] }
+            ],
+            modules: [{ source: 'envs/base', usedIn: ['envs/prod'] }]
+        });
+        deepStrictEqual(result.sort((a, b) => a.path.localeCompare(b.path)), [
+            { path: 'envs/base', providers: ['aws'] },
+            { path: 'envs/prod', providers: ['google'] }
+        ]);
+    });
+
+    it('should ignore empty-path directory entries', () => {
+        const data = { dirs: [{ path: '', providers: [] }, { path: 'app1', providers: ['aws'] }] };
+        const unrelated = calculateExecutionPaths(['README.md'], data);
+        deepStrictEqual(unrelated.sort((a, b) => a.path.localeCompare(b.path)), []);
+        const result = calculateExecutionPaths(['app1/main.tf'], data);
+        deepStrictEqual(result.sort((a, b) => a.path.localeCompare(b.path)), [
+            { path: 'app1', providers: ['aws'] }
+        ]);
+    });
+
     it('should detect direct root change', () => {
         const changedFiles = ['app1/main.tf'];
         const result = calculateExecutionPaths(changedFiles, depsData);

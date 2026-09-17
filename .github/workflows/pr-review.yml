@@ -38,6 +38,7 @@ jobs:
       - name: Detect Changes
         id: set-matrix
         run: |
+          set -euo pipefail
           CHANGES=$(node .github/tfman/cli/index.mjs detect-changes \
             --base ${{ github.event.pull_request.base.sha }} \
             --head ${{ github.event.pull_request.head.sha }} | jq -c '{include: .}')
@@ -133,8 +134,9 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
-          # Generate plan binary
-          terraform plan -input=false -out=tfplan
+          set -o pipefail
+          # Keep the raw output (including errors) as plan.txt until the canonical rendering replaces it
+          terraform plan -input=false -no-color -out=tfplan 2>&1 | tee plan.txt
           # Display with colors in logs
           terraform show tfplan
           # Save plan to text for comment
@@ -157,13 +159,15 @@ jobs:
           fi
 
       - name: Create Artifact Metadata
+        if: always()
         id: meta
         run: |
-          CLEAN_PATH=$(echo "${{ matrix.path }}" | tr '/' '-')
+          CLEAN_PATH="$(echo "${{ matrix.path }}" | tr '/' '-')-$(printf '%s' "${{ matrix.path }}" | sha256sum | cut -c1-8)"
           echo "clean_path=${CLEAN_PATH}" >> $GITHUB_OUTPUT
-          echo "{\"path\": \"${{ matrix.path }}\"}" > info.json
+          echo "{\"path\": \"${{ matrix.path }}\", \"outcome\": \"${{ steps.plan.outcome == 'success' && 'success' || 'failure' }}\"}" > info.json
 
       - name: Upload Artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: plan-${{ steps.meta.outputs.clean_path }}
@@ -189,7 +193,7 @@ jobs:
             --format json --output trivy-report.json \
             --cache-dir "${{ github.workspace }}/.cache/trivy" \
             --quiet --skip-version-check || true
-          CLEAN_PATH=$(echo "${{ matrix.path }}" | tr '/' '-')
+          CLEAN_PATH="$(echo "${{ matrix.path }}" | tr '/' '-')-$(printf '%s' "${{ matrix.path }}" | sha256sum | cut -c1-8)"
           echo "clean_path=${CLEAN_PATH}" >> "$GITHUB_OUTPUT"
           if [ -f trivy-report.json ]; then
             C=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="CRITICAL")] | length' trivy-report.json 2>/dev/null || echo 0)
@@ -236,11 +240,12 @@ jobs:
   post-plan:
     needs: [detect-changes, plan]
     runs-on: ubuntu-latest
-    if: always() && needs.detect-changes.result != 'skipped' && needs.detect-changes.outputs.has-changes == 'true'
+    if: always() && needs.detect-changes.result == 'success'
     steps:
       - uses: actions/checkout@v5
 
       - name: Download Plans
+        if: needs.detect-changes.outputs.has-changes == 'true'
         uses: actions/download-artifact@v8
         with:
           pattern: plan-*
@@ -249,8 +254,12 @@ jobs:
 
       - name: Post Plan Result
         uses: actions/github-script@v8
+        env:
+          MATRIX: ${{ needs.detect-changes.outputs.matrix }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { default: script } = await import('${{ github.workspace }}/.github/tfman/gh-scripts/post-comment.mjs');
-            await script({github, context, core, glob}, { mode: 'plan', deletePreviousComments: true });
+            const hasChanges = '${{ needs.detect-changes.outputs.has-changes }}' === 'true';
+            const expectedPaths = process.env.MATRIX ? JSON.parse(process.env.MATRIX).include.map(i => i.path) : [];
+            await script({github, context, core, glob}, { expectedPaths, mode: 'plan', deletePreviousComments: true, cleanupOnly: !hasChanges });

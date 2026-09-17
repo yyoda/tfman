@@ -40,18 +40,42 @@ describe('cli/commands/detect-changes', () => {
     assert.deepStrictEqual(result, ['path/to/affected']);
   });
 
-  it('should warn and proceed if dependency graph fails to load', async (context) => {
-    const mockConsoleWarn = context.mock.method(console, 'warn', () => {});
+  it('should fail if the specified deps file cannot be loaded', async (context) => {
+    const detectChangesMock = context.mock.fn(mockDetectChanges);
     const args = { base: 'main', head: 'feature', 'deps-file': 'invalid.json' };
-    
-    // Should fallback to basic detection (mock returns ['path/to/changed'] when depGraph is null)
-    const result = await run(args, { 
-        detectChanges: mockDetectChanges,
-        loadJson: mockLoadJson
-    });
-    
-    assert.strictEqual(mockConsoleWarn.mock.callCount(), 1);
-    assert.deepStrictEqual(result, ['path/to/changed']);
+
+    await assert.rejects(
+      async () => await run(args, {
+        detectChanges: detectChangesMock,
+        loadJson: async (path) => {
+          throw new Error(`File not found: ${path}`);
+        }
+      }),
+      /invalid\.json/
+    );
+
+    assert.strictEqual(detectChangesMock.mock.callCount(), 0);
+  });
+
+  it('should reject an explicitly empty deps file path', async (context) => {
+    const detectChangesMock = context.mock.fn(mockDetectChanges);
+    const loadJsonMock = context.mock.fn(mockLoadJson);
+    await assert.rejects(
+      run({ base: 'main', head: 'feature', 'deps-file': '' }, {
+        detectChanges: detectChangesMock,
+        loadJson: loadJsonMock
+      }),
+      /File not found/
+    );
+    assert.strictEqual(loadJsonMock.mock.calls[0].arguments[0], '');
+    assert.strictEqual(detectChangesMock.mock.callCount(), 0);
+  });
+
+  it('should reject a deps file flag without a path', async () => {
+    await assert.rejects(
+      run({ base: 'main', head: 'feature', 'deps-file': true }),
+      /--deps-file requires a path/
+    );
   });
 
   it('should save output if output path is provided', async (context) => {

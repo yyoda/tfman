@@ -17,7 +17,9 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   const { fs = _fs, path = _path } = deps;
   const config = {
       mode: options.mode || 'plan',
-      deletePreviousComments: options.deletePreviousComments === true
+      deletePreviousComments: options.deletePreviousComments === true,
+      cleanupOnly: options.cleanupOnly === true,
+      expectedPaths: options.expectedPaths || []
   };
 
   // Link to the current workflow run, where the full (untruncated) plan/apply
@@ -33,7 +35,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       artifactPattern: 'plans/**/info.json',
       builder: {
         factory: () => new PlanCommentBuilder(),
-        add: (builder, path, content, _) => builder.addResult(path, content),
+        add: (builder, path, content, outcome) => builder.addResult(path, content, outcome),
         build: (builder) => {
           const body = builder.buildComment({ runUrl });
           return body ? [body] : [];
@@ -45,7 +47,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       artifactPattern: 'applies/**/info.json',
       builder: {
         factory: () => new ApplyCommentBuilder(),
-        add: (builder, path, content, info) => builder.addResult(path, content, info.outcome),
+        add: (builder, path, content, outcome) => builder.addResult(path, content, outcome),
         build: (builder) => {
           const body = builder.buildComment({ runUrl });
           return body ? [body] : [];
@@ -66,29 +68,14 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   const COMMENT_HEADER = builder.constructor.COMMENT_HEADER;
   const CONTINUED_HEADER = builder.constructor.CONTINUED_HEADER || null;
 
-  // 1. Collect result artifacts
-  const globber = await glob.create(behavior.artifactPattern);
-  const infoFiles = await globber.glob();
-
-  if (infoFiles.length === 0) {
-    if (core) core.info(`No ${config.mode} results found.`);
-    const message = `### Terraform ${config.mode === 'plan' ? 'Plan' : 'Apply'} Result\n\nNo changes were detected for this run.`;
-    await github.rest.issues.createComment({
-        owner: context.repo.owner,
-        repo: context.repo.repo,
-        issue_number: context.issue.number,
-        body: message
-    });
-    return;
-  }
-
-  // 2. Cleanup previous comments (Controlled by flag)
-  if (config.deletePreviousComments) {
+  const cleanupPreviousComments = async () => {
+    if (!config.deletePreviousComments) return;
     try {
-      const { data: comments } = await github.rest.issues.listComments({
+      const comments = await github.paginate(github.rest.issues.listComments, {
         owner: context.repo.owner,
         repo: context.repo.repo,
         issue_number: context.issue.number,
+        per_page: 100,
       });
 
       const botComments = comments.filter(comment => 
@@ -106,24 +93,59 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
     } catch (error) {
       if (core) core.warning(`Failed to cleanup comments: ${error.message}`);
     }
+  };
+
+  if (config.cleanupOnly) {
+    await cleanupPreviousComments();
+    if (core) core.info(`Removed previous ${config.mode} comments (cleanup only).`);
+    return;
   }
 
+  // 1. Collect result artifacts
+  const globber = await glob.create(behavior.artifactPattern);
+  const infoFiles = await globber.glob();
+
+  if (infoFiles.length === 0 && config.expectedPaths.length === 0) {
+    await cleanupPreviousComments();
+    if (core) core.info(`No ${config.mode} results found.`);
+    const message = `${COMMENT_HEADER}\n\nNo ${config.mode} results were produced for this run. The ${config.mode} jobs may have failed before producing any output — check the workflow run for details.` +
+      (runUrl ? `\n\n> 📄 [Workflow run](${runUrl})` : '');
+    await github.rest.issues.createComment({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        issue_number: context.issue.number,
+        body: message
+    });
+    return;
+  }
+
+  // 2. Cleanup previous comments (Controlled by flag)
+  await cleanupPreviousComments();
+
   // 3. Add results to Builder
+  const resultPaths = new Set();
   for (const infoFile of infoFiles) {
     try {
       const info = JSON.parse(fs.readFileSync(infoFile, 'utf8'));
       const dir = path.dirname(infoFile);
       const logPath = path.join(dir, behavior.logFile);
       
-      const content = fs.existsSync(logPath) 
-        ? fs.readFileSync(logPath, 'utf8') 
-        : '(Log file not found)';
+      const logExists = fs.existsSync(logPath);
+      const content = logExists ? fs.readFileSync(logPath, 'utf8') : '(Log file not found)';
+      const outcome = logExists ? (info.outcome ?? 'success') : 'failure';
       
       // Use the builder definition add method
-      behavior.builder.add(builder, info.path, content, info);
+      behavior.builder.add(builder, info.path, content, outcome);
+      resultPaths.add(info.path);
 
     } catch (error) {
       if (core) core.error(`Error processing ${infoFile}: ${error.message}`);
+    }
+  }
+
+  for (const expectedPath of new Set(config.expectedPaths)) {
+    if (!resultPaths.has(expectedPath)) {
+      behavior.builder.add(builder, expectedPath, '(No result artifact was produced for this path — the job may have been cancelled or failed before uploading)', 'failure');
     }
   }
 
