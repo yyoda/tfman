@@ -122,15 +122,13 @@ jobs:
             DONE=true
             MESSAGE="User ${ACTOR} does not have permission to apply. Required role: applier."
           fi
-          echo "tf_targets_json=$TF_TARGETS_JSON" >> "$GITHUB_OUTPUT"
           {
+            echo "tf_targets_json=$TF_TARGETS_JSON"
             echo "matrix<<EOF"
             echo "$MATRIX"
             echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-          echo "command=$COMMAND" >> "$GITHUB_OUTPUT"
-          echo "done=$DONE" >> "$GITHUB_OUTPUT"
-          {
+            echo "command=$COMMAND"
+            echo "done=$DONE"
             echo "message<<EOF"
             echo "$MESSAGE"
             echo "EOF"
