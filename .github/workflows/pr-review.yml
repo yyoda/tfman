@@ -71,8 +71,10 @@ jobs:
         run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Load .env
+        env:
+          TF_ROOT: ${{ matrix.path }}
         run: |
-          ENV_FILE="${{ github.workspace }}/.github/env.d/${{ matrix.path }}/.env"
+          ENV_FILE="${GITHUB_WORKSPACE}/.github/env.d/${TF_ROOT}/.env"
           if [ -f "$ENV_FILE" ]; then
             awk '!/^[[:space:]]*(#|$)/' "$ENV_FILE" >> "$GITHUB_ENV"
           else
@@ -145,7 +147,9 @@ jobs:
       - name: Write Plan Result
         if: always()
         id: meta
-        run: node "${{ github.workspace }}/.github/tfman/cli/index.mjs" write-result --path "${{ matrix.path }}" --command plan --outcome "${{ steps.plan.outcome }}"
+        env:
+          TF_ROOT: ${{ matrix.path }}
+        run: node "$GITHUB_WORKSPACE/.github/tfman/cli/index.mjs" write-result --path "$TF_ROOT" --command plan --outcome "${{ steps.plan.outcome }}"
 
       - name: Upload Artifact
         if: always()
@@ -167,6 +171,8 @@ jobs:
       - name: Trivy IaC scan (informational)
         if: ${{ !cancelled() && hashFiles('trivy.yaml') != '' }}
         id: trivy
+        env:
+          TF_ROOT: ${{ matrix.path }}
         run: |
           trivy config . \
             --config "${{ github.workspace }}/trivy.yaml" \
@@ -178,7 +184,7 @@ jobs:
             C=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="CRITICAL")] | length' trivy-report.json 2>/dev/null || echo 0)
             H=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="HIGH")]     | length' trivy-report.json 2>/dev/null || echo 0)
             {
-              echo "## 🔎 Trivy (informational) — \`${{ matrix.path }}\`"
+              echo "## 🔎 Trivy (informational) — \`${TF_ROOT}\`"
               echo "CRITICAL: ${C}  HIGH: ${H}  — details in the \`trivy-*\` artifact."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -194,7 +200,7 @@ jobs:
 
       - name: Setup TFLint
         if: ${{ !cancelled() && hashFiles('.tflint.hcl') != '' }}
-        uses: terraform-linters/setup-tflint@v4
+        uses: terraform-linters/setup-tflint@v6
         with:
           tflint_version: v0.63.1
 

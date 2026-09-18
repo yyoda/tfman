@@ -1,5 +1,5 @@
 import { describe, it } from 'node:test';
-import { deepStrictEqual } from 'node:assert';
+import { deepStrictEqual, throws } from 'node:assert';
 import { resolveTargets } from '../../../lib/ops/target-selector.mjs';
 
 describe('select-targets', () => {
@@ -54,4 +54,16 @@ describe('select-targets', () => {
         deepStrictEqual(includeList, [{ path: 'app1', providers: ['aws'] }]);
         deepStrictEqual(failedTargets, ['foo']);
     });
+});
+
+it('rejects invalid graph roots before lookup', () => {
+    for (const path of ['', 'env/$(id)', 'env//root', '.github/root']) {
+        throws(() => resolveTargets([], { dirs: [{ path }] }), /Invalid root path:/);
+    }
+});
+
+it('reports invalid normalized targets as validation errors', () => {
+    for (const target of ['', './', '../root', './env/$(id)/', 'env/`id`', 'env/日本語', null]) {
+        throws(() => resolveTargets([target], { dirs: [] }), /Invalid root path:/);
+    }
 });

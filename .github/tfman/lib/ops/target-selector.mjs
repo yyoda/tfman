@@ -8,9 +8,8 @@
 export function resolveTargets(targets, depsData) {
   const dirsMap = new Map();
   for (const d of (depsData.dirs || [])) {
-    if (d.path) {
-      dirsMap.set(d.path, d.providers || []);
-    }
+    assertSafeRootPath(d.path);
+    dirsMap.set(d.path, d.providers || []);
   }
 
   const includeList = [];
@@ -18,7 +17,9 @@ export function resolveTargets(targets, depsData) {
   const seen = new Set();
 
   for (const t of targets) {
+    if (typeof t !== 'string') assertSafeRootPath(t);
     const normalized = t.replace(/^\.\//, '').replace(/\/+$/, '');
+    assertSafeRootPath(normalized);
     if (seen.has(normalized)) continue;
     seen.add(normalized);
 
@@ -36,7 +37,7 @@ export function resolveTargets(targets, depsData) {
 }
 
 import { join } from 'node:path';
-import { getWorkspaceRoot, loadJson } from '../utils.mjs';
+import { getWorkspaceRoot, loadJson, assertSafeRootPath } from '../utils.mjs';
 
 export async function selectTargets(targetsInput) {
   if (!targetsInput) {

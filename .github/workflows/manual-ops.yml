@@ -42,10 +42,11 @@ jobs:
         id: get-roles
         env:
           ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           APPLIERS: ${{ vars.APPLIERS }}
           COMMAND: ${{ inputs.command }}
         run: |
-          if echo "$APPLIERS" | jq -e --arg actor "$ACTOR" 'any(.[]; . == $actor)' > /dev/null 2>&1; then
+          if echo "$APPLIERS" | jq -e --arg actor "$ACTOR" --arg triggering_actor "$TRIGGERING_ACTOR" 'any(.[]; . == $actor) and any(.[]; . == $triggering_actor)' > /dev/null 2>&1; then
             ROLES='["applier"]'
           else
             ROLES='["planner"]'
@@ -111,8 +112,10 @@ jobs:
         run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Load .env
+        env:
+          TF_ROOT: ${{ matrix.path }}
         run: |
-          ENV_FILE="${{ github.workspace }}/.github/env.d/${{ matrix.path }}/.env"
+          ENV_FILE="${GITHUB_WORKSPACE}/.github/env.d/${TF_ROOT}/.env"
           if [ -f "$ENV_FILE" ]; then
             awk '!/^[[:space:]]*(#|$)/' "$ENV_FILE" >> "$GITHUB_ENV"
           else
@@ -181,8 +184,14 @@ jobs:
         env:
           ROLES: ${{ needs.authorize.outputs.roles }}
           ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          APPLIERS: ${{ vars.APPLIERS }}
           TF_TARGETS: ${{ inputs.tf_targets }}
         run: |
+          if ! echo "$APPLIERS" | jq -e --arg actor "$TRIGGERING_ACTOR" 'any(.[]; . == $actor)' > /dev/null 2>&1; then
+            echo "User $TRIGGERING_ACTOR does not have permission to apply. Required role: applier."
+            exit 1
+          fi
           if ! echo "$ROLES" | jq -e 'any(.[]; . == "applier")' > /dev/null; then
             echo "User $ACTOR does not have permission to apply. Required role: applier."
             exit 1

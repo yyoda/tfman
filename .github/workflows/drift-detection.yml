@@ -56,8 +56,10 @@ jobs:
         run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Load .env
+        env:
+          TF_ROOT: ${{ matrix.path }}
         run: |
-          ENV_FILE="${{ github.workspace }}/.github/env.d/${{ matrix.path }}/.env"
+          ENV_FILE="${GITHUB_WORKSPACE}/.github/env.d/${TF_ROOT}/.env"
           if [ -f "$ENV_FILE" ]; then
             awk '!/^[[:space:]]*(#|$)/' "$ENV_FILE" >> "$GITHUB_ENV"
           else
@@ -111,15 +113,17 @@ jobs:
 
       - name: Terraform Plan
         id: plan
+        env:
+          TF_ROOT: ${{ matrix.path }}
         run: |
           set +e
           terraform plan -detailed-exitcode -input=false
           exit_code=$?
 
           if [ $exit_code -eq 2 ]; then
-            echo "::error::Drift detected in ${{ matrix.path }}"
+            echo "::error::Drift detected in ${TF_ROOT}"
             exit 1
           elif [ $exit_code -ne 0 ]; then
-            echo "::error::Terraform plan failed in ${{ matrix.path }}"
+            echo "::error::Terraform plan failed in ${TF_ROOT}"
             exit 1
           fi

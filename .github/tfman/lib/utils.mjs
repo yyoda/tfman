@@ -122,3 +122,11 @@ export async function appendGithubOutput(entries, file = process.env.GITHUB_OUTP
   }).join('');
   await appendFile(file, output);
 }
+
+/** Validates a repository-relative Terraform root path before it is emitted. */
+export function assertSafeRootPath(p) {
+  if (typeof p !== 'string' || !p.split('/').every(segment => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.exec(segment)?.[0] === segment)) {
+    throw new Error(`Invalid root path: ${JSON.stringify(p)}`);
+  }
+  return p;
+}

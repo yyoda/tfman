@@ -1,6 +1,6 @@
 
 import { join } from 'node:path';
-import { getWorkspaceRoot, loadJson } from '../utils.mjs';
+import { getWorkspaceRoot, loadJson, assertSafeRootPath } from '../utils.mjs';
 import { runGitDiff } from '../git.mjs';
 
 /**
@@ -18,14 +18,14 @@ export function calculateExecutionPaths(changedFiles, depsData) {
   const rootProviders = new Map();
 
   for (const item of dirsData) {
-    if (item.path) {
-      rootProviders.set(item.path, item.providers || []);
-    }
+    assertSafeRootPath(item.path);
+    rootProviders.set(item.path, item.providers || []);
   }
 
   // Module -> Set<ConsumerRoot>
   const moduleUsageMap = new Map();
   for (const m of modulesData) {
+    for (const consumer of (m.usedIn || [])) assertSafeRootPath(consumer);
     if (m.source) {
       moduleUsageMap.set(m.source, new Set(m.usedIn || []));
     }

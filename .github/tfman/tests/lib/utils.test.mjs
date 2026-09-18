@@ -5,7 +5,7 @@ import { writeFile, readFile, unlink, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { runCommand, getWorkspaceRoot, loadJson, appendGithubOutput } from '../../lib/utils.mjs';
+import { runCommand, getWorkspaceRoot, loadJson, appendGithubOutput, assertSafeRootPath } from '../../lib/utils.mjs';
 
 describe('utils.mjs', () => {
 
@@ -108,5 +108,25 @@ describe('appendGithubOutput', () => {
       'text=hello\nnumber=42\nmissing=\nempty=\nmessage<<ghadelim\nfirst\nlast\nghadelim\n');
     await appendGithubOutput({ message: 'ghadelim' }, '');
     await assert.rejects(appendGithubOutput({ message: 'first\nghadelim\nlast' }, file), /delimiter/);
+  });
+});
+
+describe('assertSafeRootPath', () => {
+  it('returns valid relative root paths unchanged', () => {
+    for (const path of ['environments/test1', 'environments/test2', 'A0/b.c_d-e', 'root']) {
+      assert.strictEqual(assertSafeRootPath(path), path);
+    }
+  });
+
+  it('rejects invalid types, segments, and shell syntax', () => {
+    for (const path of [undefined, null, 42, {}, [], '', '/', '/root', 'C:/root',
+      'root\\child', '.', '..', '.github/root', 'root/.hidden', 'root/../other',
+      'root//child', 'root/', 'root/ space', 'root/$(id)', 'root/`id`',
+      'root/"x"', "root/'x'", 'root/x;y', 'root/x|y', 'root/x&y',
+      'root/x\n', 'root/x\r', 'root/日本語', '-root', '_root']) {
+      assert.throws(() => assertSafeRootPath(path), {
+        message: `Invalid root path: ${JSON.stringify(path)}`,
+      });
+    }
   });
 });

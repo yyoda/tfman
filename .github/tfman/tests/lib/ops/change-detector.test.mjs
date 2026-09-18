@@ -1,5 +1,5 @@
 import { describe, it } from 'node:test';
-import { deepStrictEqual } from 'node:assert';
+import { deepStrictEqual, throws } from 'node:assert';
 import { calculateExecutionPaths } from '../../../lib/ops/change-detector.mjs';
 
 describe('detect-changes', () => {
@@ -56,12 +56,19 @@ describe('detect-changes', () => {
         ]);
     });
 
-    it('should ignore empty-path directory entries', () => {
-        const data = { dirs: [{ path: '', providers: [] }, { path: 'app1', providers: ['aws'] }] };
-        const unrelated = calculateExecutionPaths(['README.md'], data);
-        deepStrictEqual(unrelated.sort((a, b) => a.path.localeCompare(b.path)), []);
-        const result = calculateExecutionPaths(['app1/main.tf'], data);
-        deepStrictEqual(result.sort((a, b) => a.path.localeCompare(b.path)), [
+    it('rejects invalid roots even when no files changed', () => {
+        for (const path of ['', 'env/$(id)', 'env/../other', 'env/日本語']) {
+            throws(() => calculateExecutionPaths([], { dirs: [{ path }] }), /Invalid root path:/);
+            for (const source of ['modules/mod1', '']) {
+                throws(() => calculateExecutionPaths([], {
+                    modules: [{ source, usedIn: [path] }]
+                }), /Invalid root path:/);
+            }
+        }
+    });
+
+    it('does not validate filenames inside valid roots', () => {
+        deepStrictEqual(calculateExecutionPaths(['app1/日本語 $(id).tf'], depsData), [
             { path: 'app1', providers: ['aws'] }
         ]);
     });
