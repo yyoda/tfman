@@ -35,7 +35,7 @@ for (const command of ['plan', 'apply']) {
         const capture = 'terraform() { printf "%s\\0" "$@" > "$CAPTURE_ARGUMENTS"; }\n';
         const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', capture + script], {
           cwd: workspace,
-          env: { ...process.env, TF_TARGETS: input, ROLES: '["applier"]', ACTOR: 'test-user', CAPTURE_ARGUMENTS: output },
+          env: { ...process.env, TF_TARGETS: input, ROLES: '["applier"]', ACTOR: 'test-user', TRIGGERING_ACTOR: 'test-user', APPLIERS: '["test-user"]', CAPTURE_ARGUMENTS: output },
           encoding: 'utf8',
         });
 
@@ -44,6 +44,29 @@ for (const command of ['plan', 'apply']) {
         assert.deepEqual((await readFile(output, 'utf8')).split('\0').slice(0, -1), [
           command, ...flags, ...targets.map((target) => `-target=${target}`),
         ]);
+      });
+    }
+    if (command === 'apply') {
+      it('rejects an unauthorized re-running user before invoking terraform', async (t) => {
+        const source = await readFile(new URL('../../../workflows/manual-ops.yml', import.meta.url), 'utf8');
+        const match = source.match(/      - name: Terraform Apply\n[\s\S]*?        run: \|\n([\s\S]*?)(?=\n      - |$)/);
+        assert.ok(match, 'workflow must contain the apply step');
+        const script = match[1].replace(/^          /gm, '');
+
+        const workspace = await mkdtemp(join(tmpdir(), 'tfman manual targets '));
+        t.after(() => rm(workspace, { recursive: true, force: true }));
+        const output = join(workspace, 'terraform-arguments');
+        const capture = 'terraform() { printf "%s\\0" "$@" > "$CAPTURE_ARGUMENTS"; }\n';
+        const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', capture + script], {
+          cwd: workspace,
+          env: { ...process.env, TF_TARGETS: '', ROLES: '["applier"]', ACTOR: 'test-user', TRIGGERING_ACTOR: 'someone-else', APPLIERS: '["test-user"]', CAPTURE_ARGUMENTS: output },
+          encoding: 'utf8',
+        });
+
+        assert.ifError(result.error);
+        assert.notEqual(result.status, 0);
+        assert.match(result.stdout, /does not have permission to apply/);
+        await assert.rejects(readFile(output), { code: 'ENOENT' });
       });
     }
   });

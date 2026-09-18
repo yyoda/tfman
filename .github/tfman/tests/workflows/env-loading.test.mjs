@@ -1,12 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const workflows = ['pr-review', 'pr-comment', 'manual-ops', 'drift-detection'];
 const cases = [
+  { name: 'literal shell syntax in root', root: 'environments/$(touch pwned)`touch pwned`', content: null, expected: '' },
   { name: 'missing file', content: null, expected: '' },
   { name: 'empty file', content: '', expected: '' },
   { name: 'comments and whitespace only', content: '# comment\n  # indented\n\t# tabbed\n\n \t\n', expected: '' },
@@ -19,19 +20,15 @@ const cases = [
 
 for (const workflow of workflows) {
   describe(`${workflow} environment loading`, () => {
-    for (const { name, content, expected } of cases) {
+    for (const { name, content, expected, root = 'environments/test' } of cases) {
       it(`accepts ${name}`, async (t) => {
         const source = await readFile(new URL(`../../../workflows/${workflow}.yml`, import.meta.url), 'utf8');
-        const match = source.match(/      - name: Load \.env\n        run: \|\n([\s\S]*?)(?=\n      - )/);
+        const match = source.match(/      - name: Load \.env\n        env:\n          TF_ROOT: \$\{\{ matrix\.path \}\}\n        run: \|\n([\s\S]*?)(?=\n      - )/);
         assert.ok(match, 'workflow must contain the environment loading step');
-        const script = match[1]
-          .replace(/^          /gm, '')
-          .replaceAll('${{ github.workspace }}', '${WORKSPACE}')
-          .replaceAll('${{ matrix.path }}', '${TERRAFORM_ROOT}');
+        const script = match[1].replace(/^          /gm, '');
 
         const workspace = await mkdtemp(join(tmpdir(), 'tfman env loading '));
         t.after(() => rm(workspace, { recursive: true, force: true }));
-        const root = 'environments/test';
         const envDir = join(workspace, '.github/env.d', root);
         await mkdir(envDir, { recursive: true });
         if (content !== null) await writeFile(join(envDir, '.env'), content);
@@ -39,10 +36,12 @@ for (const workflow of workflows) {
         await writeFile(output, 'EXISTING=preserved\n');
 
         const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
-          env: { ...process.env, WORKSPACE: workspace, TERRAFORM_ROOT: root, GITHUB_ENV: output },
+          cwd: workspace,
+          env: { ...process.env, GITHUB_WORKSPACE: workspace, TF_ROOT: root, GITHUB_ENV: output },
           encoding: 'utf8',
         });
 
+        await assert.rejects(access(join(workspace, 'pwned')), { code: 'ENOENT' });
         assert.equal(result.status, 0, result.stderr || String(result.error || 'step failed'));
         assert.equal(await readFile(output, 'utf8'), `EXISTING=preserved\n${expected}`);
         if (content === null) assert.match(result.stdout, /\.env not found, skipping/);

@@ -30,7 +30,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - `tf_targets`: *(Optional)* Terraform resource addresses to restrict the operation to (whitespace-separated). Passed as literal `-target=` flags to Terraform, preserving indexes such as `aws_instance.web[0]` and `aws_instance.web["blue"]` without shell filename expansion. Example: `aws_instance.example module.frontend`
     - `command`: The command to execute. The default is `apply`, but `plan` can be specified as an option.
 - **CONDITIONS**:
-    - **Execution User Restriction**: The executor (`github.actor`) must be listed in the `APPLIERS` repository variable. If not included, `terraform apply` is blocked.
+    - **Execution User Restriction**: The executor (`github.actor`) must be listed in the `APPLIERS` repository variable. If not included, `terraform apply` is blocked. Re-runs also require the re-running user (`github.triggering_actor`) to be listed in `APPLIERS`.
 
 ### PRComment
 - **PURPOSE**:
@@ -46,6 +46,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 - **CONDITIONS**:
     - **Targets**: Directory targets must match Terraform root paths in `.tfdeps.json` (i.e., `dirs[].path`, relative to repo/workspace root). Leading `./` and trailing `/` are ignored, and duplicate targets are collapsed into a single job.
     - **-target**: Resource addresses follow standard Terraform address syntax (e.g., `aws_instance.example`, `module.frontend`, `aws_instance.web[0]`, `aws_instance.web["blue"]`). Both `-target=<resource>` and `-target <resource>` (space-separated) forms are supported. Multiple `-target` flags can be specified.
+    - Apply requires both the comment author and the person who runs or re-runs the workflow (`github.triggering_actor`) to be listed in `APPLIERS`.
     - **Execution User Restriction**: Users not listed in `APPLIERS` can run `plan` but `apply` is blocked.
     - Command parsing and target resolution run with the tfman scripts from the repository's default branch. Terraform itself runs against the PR head commit SHA resolved at the start of the run (the same SHA the commit status is reported on), so a push to the PR branch during the run cannot change what gets planned or applied. Unauthorized `apply` requests are rejected before any cloud credentials are configured.
     - Cancelled runs report an `error` commit status and a comment with ❌ rows for roots that produced no artifact.
@@ -115,6 +116,7 @@ The repository root itself is never treated as a Terraform root; a root-level `.
 When executing each job, if an `.env` file exists in `.github/env.d/<path>/`, its nonblank, noncomment lines are appended to `GITHUB_ENV`. Lines beginning with `#` after optional whitespace are comments; other lines are preserved as written. Empty files and files containing only comments or whitespace are valid and add no variables. If the file does not exist, the workflow logs a skip message and continues.
 
 #### Dependency Definition (`.tfdeps.json`)
+Root paths must be non-empty relative paths whose slash-separated segments match `[A-Za-z0-9][A-Za-z0-9._-]*`, with no empty segments or trailing slash.
 `DriftDetection` and parts of the change detection logic depend on the `.tfdeps.json` file, which defines the directory structure and dependencies. Regenerate it whenever a Terraform root is added, removed, or moved, whenever a root starts or stops using a local module, or whenever a root's provider set changes (`.terraform.lock.hcl`). The workflows also select cloud credentials from the recorded providers, so a stale entry can leave a root without the credentials its new provider needs.
 
 For update instructions, please refer to the **CLI Scripts** section below.
