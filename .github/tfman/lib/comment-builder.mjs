@@ -1,30 +1,19 @@
 // Default upper bound for a single GitHub Issue/PR comment body.
 // GitHub's hard limit is 65536 characters; we stay well under it for safety.
 export const DEFAULT_MAX_COMMENT_LENGTH = 60000;
-// Per-path budget for inline detail blocks. The Job Summary holds output
-// truncated at ~900 KB per root; the full file is in the run artifacts.
-// Inline detail only needs to be enough for a quick review.
-export const DEFAULT_PER_PATH_BUDGET = 12000;
 
 /**
- * Build a single fenced detail block for one path, optionally truncating the
- * content to a per-path budget. Pass `Infinity` as the budget to keep the full
- * output. The Job Summary truncates output at ~900 KB per root; the full file
- * is in the run artifacts.
+ * Build a single fenced detail block with the full output for one path.
  * @param {string} tfPath
  * @param {string} content
  * @param {string} fence - Code fence language (e.g. 'hcl', 'text')
- * @param {number} perPathBudget - Max characters of content, or Infinity for no limit
  * @returns {string}
  */
-function buildDetailBlock(tfPath, content, fence, perPathBudget) {
+function buildDetailBlock(tfPath, content, fence) {
   const header = `### 📂 \`${tfPath}\`\n\n\`\`\`${fence}\n`;
   const footer = `\n\`\`\`\n\n`;
   // Sanitize to avoid breaking the surrounding markdown code fence.
-  let body = content.replace(/```/g, "'''");
-  if (body.length > perPathBudget) {
-    body = body.slice(0, perPathBudget) + '\n... (truncated — see the full output in the workflow run summary)';
-  }
+  const body = content.replace(/```/g, "'''");
   return `${header}${body}${footer}`;
 }
 
@@ -43,9 +32,8 @@ function wrapDetails(detailBlocks, label) {
  * Assemble a comment with a graded fallback so that the common case is
  * unchanged and only oversized output is degraded:
  *   1. Full inline output (no link footer) — kept whenever it fits the limit.
- *   2. Per-path truncated output + a link to the full output in the run summary.
- *   3. Summary table only + the same link, when even truncation does not fit.
- *   4. Truncate summary rows with an omission row when the table does not fit.
+ *   2. Summary table only + a link to the full output in the run summary.
+ *   3. Truncate summary rows with an omission row when the table does not fit.
  * The returned body is guaranteed to be within maxCommentLength.
  * @param {object} params
  * @param {string} params.summaryHeader - Comment header and table headings
@@ -54,35 +42,27 @@ function wrapDetails(detailBlocks, label) {
  * @param {string} params.detailsLabel - <details> summary label
  * @param {string} params.linkFooter - Footer linking to the full output (may be '')
  * @param {number} params.maxCommentLength
- * @param {number} params.perPathBudget
  * @returns {string}
  */
-function assembleComment({ summaryHeader, summaryRows, details, detailsLabel, linkFooter, maxCommentLength, perPathBudget }) {
+function assembleComment({ summaryHeader, summaryRows, details, detailsLabel, linkFooter, maxCommentLength }) {
   const summary = summaryHeader + summaryRows.join('');
 
   // 1. Prefer the full, untruncated output with no extra footer — this keeps
   //    the output identical to the previous behavior whenever it fits.
-  const fullBlocks = details.map(d => buildDetailBlock(d.tfPath, d.content, d.fence, Infinity));
+  const fullBlocks = details.map(d => buildDetailBlock(d.tfPath, d.content, d.fence));
   const full = summary + wrapDetails(fullBlocks, detailsLabel);
   if (full.length <= maxCommentLength) {
     return full;
   }
 
-  // 2. Too large: truncate each path to the per-path budget and add the link.
-  const truncatedBlocks = details.map(d => buildDetailBlock(d.tfPath, d.content, d.fence, perPathBudget));
-  const truncated = summary + linkFooter + wrapDetails(truncatedBlocks, detailsLabel);
-  if (truncated.length <= maxCommentLength) {
-    return truncated;
-  }
-
-  // 3. Still too large (many paths): drop inline details entirely.
+  // 2. Too large: drop inline details entirely and add the link.
   const note = '\n> ⚠️ Inline details were omitted because they exceed the comment size limit. See the workflow run summary for the full output.\n';
   const summaryOnly = summary + linkFooter + note;
   if (summaryOnly.length <= maxCommentLength) {
     return summaryOnly;
   }
 
-  // 4. Reserve room for the omission row before retaining each summary row.
+  // 3. Reserve room for the omission row before retaining each summary row.
   const omissionRow = omitted => `| … | | ${omitted} more paths omitted — see the workflow run summary |\n`;
   let retained = '';
   let kept = 0;
@@ -99,13 +79,6 @@ function assembleComment({ summaryHeader, summaryRows, details, detailsLabel, li
 export class PlanCommentBuilder {
   static get COMMENT_HEADER() {
     return '## 📋 Terraform Plan Summary';
-  }
-
-  // Retained only so comment cleanup can still find and delete legacy
-  // multi-part comments produced by the previous chunked implementation.
-  // Current comments are always single-body (see buildComment).
-  static get CONTINUED_HEADER() {
-    return '### 📋 Terraform Plan Details (Continued)';
   }
 
   constructor() {
@@ -128,16 +101,15 @@ export class PlanCommentBuilder {
 
   /**
    * Build the comment body. The full inline output is kept whenever it fits
-   * GitHub's comment size limit; only oversized output is degraded (per-path
-   * truncation, then summary-only) with a link to the full output in the run
-   * summary. See assembleComment for the graded fallback.
+   * GitHub's comment size limit; oversized output becomes summary-only with
+   * a link to the full output in the run summary. Summary rows are truncated
+   * only if needed. See assembleComment for the graded fallback.
    * @param {object} [options]
    * @param {string|null} [options.runUrl] - URL of the workflow run holding the full output
    * @param {number} [options.maxCommentLength]
-   * @param {number} [options.perPathBudget]
    * @returns {string} Comment body ('' when there are no results)
    */
-  buildComment({ runUrl = null, maxCommentLength = DEFAULT_MAX_COMMENT_LENGTH, perPathBudget = DEFAULT_PER_PATH_BUDGET } = {}) {
+  buildComment({ runUrl = null, maxCommentLength = DEFAULT_MAX_COMMENT_LENGTH } = {}) {
     if (this.results.length === 0) return '';
 
     this.results.sort((a, b) => a.tfPath.localeCompare(b.tfPath));
@@ -164,8 +136,7 @@ export class PlanCommentBuilder {
       details,
       detailsLabel: 'Show Detailed Plans',
       linkFooter,
-      maxCommentLength,
-      perPathBudget
+      maxCommentLength
     });
   }
 
@@ -250,16 +221,15 @@ export class ApplyCommentBuilder {
 
   /**
    * Build the comment body. The full inline output is kept whenever it fits
-   * GitHub's comment size limit; only oversized output is degraded (per-path
-   * truncation, then summary-only) with a link to the full output in the run
-   * summary. See assembleComment for the graded fallback.
+   * GitHub's comment size limit; oversized output becomes summary-only with
+   * a link to the full output in the run summary. Summary rows are truncated
+   * only if needed. See assembleComment for the graded fallback.
    * @param {object} [options]
    * @param {string|null} [options.runUrl] - URL of the workflow run holding the full output
    * @param {number} [options.maxCommentLength]
-   * @param {number} [options.perPathBudget]
    * @returns {string} Comment body ('' when there are no results)
    */
-  buildComment({ runUrl = null, maxCommentLength = DEFAULT_MAX_COMMENT_LENGTH, perPathBudget = DEFAULT_PER_PATH_BUDGET } = {}) {
+  buildComment({ runUrl = null, maxCommentLength = DEFAULT_MAX_COMMENT_LENGTH } = {}) {
     if (this.results.length === 0) return '';
 
     this.results.sort((a, b) => a.tfPath.localeCompare(b.tfPath));
@@ -285,8 +255,7 @@ export class ApplyCommentBuilder {
       details,
       detailsLabel: 'Show Output Details',
       linkFooter,
-      maxCommentLength,
-      perPathBudget
+      maxCommentLength
     });
   }
 

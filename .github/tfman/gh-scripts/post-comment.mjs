@@ -23,7 +23,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   };
 
   // Link to the current workflow run, where the full (untruncated) plan/apply
-  // output is written to the Job Summary. Inline comment detail is truncated,
+  // output is written to the Job Summary. Oversized inline comment detail is omitted,
   // so this link is how reviewers reach the complete output.
   const runUrl = context.runId
     ? `${context.serverUrl || 'https://github.com'}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
@@ -36,10 +36,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       builder: {
         factory: () => new PlanCommentBuilder(),
         add: (builder, path, content, outcome) => builder.addResult(path, content, outcome),
-        build: (builder) => {
-          const body = builder.buildComment({ runUrl });
-          return body ? [body] : [];
-        }
+        build: (builder) => builder.buildComment({ runUrl })
       }
     },
     apply: {
@@ -48,10 +45,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       builder: {
         factory: () => new ApplyCommentBuilder(),
         add: (builder, path, content, outcome) => builder.addResult(path, content, outcome),
-        build: (builder) => {
-          const body = builder.buildComment({ runUrl });
-          return body ? [body] : [];
-        }
+        build: (builder) => builder.buildComment({ runUrl })
       }
     }
   };
@@ -66,7 +60,6 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   const builder = behavior.builder.factory();
   // Retrieve content headers from the instance's constructor
   const COMMENT_HEADER = builder.constructor.COMMENT_HEADER;
-  const CONTINUED_HEADER = builder.constructor.CONTINUED_HEADER || null;
 
   const cleanupPreviousComments = async () => {
     if (!config.deletePreviousComments) return;
@@ -80,7 +73,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
 
       const botComments = comments.filter(comment => 
         comment.user.type === 'Bot' && 
-        (comment.body.includes(COMMENT_HEADER) || (CONTINUED_HEADER && comment.body.includes(CONTINUED_HEADER)))
+        comment.body.includes(COMMENT_HEADER)
       );
 
       for (const comment of botComments) {
@@ -149,11 +142,11 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
     }
   }
 
-  // 4. Generate comments and post
-  const commentsToPost = behavior.builder.build(builder);
+  // 4. Generate the comment body and post
+  const body = behavior.builder.build(builder);
 
   try {
-    for (const body of commentsToPost) {
+    if (body) {
       await github.rest.issues.createComment({
         owner: context.repo.owner,
         repo: context.repo.repo,
