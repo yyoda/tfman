@@ -59,7 +59,7 @@ environments/prod-us  │ +2 to add, ~1 to change, 0 to destroy
 environments/staging  │ +2 to add, ~1 to change, 0 to destroy
 ```
 
-Collapsible details. Change counts at a glance. Oversized output degrades gracefully instead of failing: details are truncated first, then summarized, with a link to the workflow run summary, which holds up to about 900 KB per root; the complete `plan.txt`/`apply.txt` files are in the run artifacts (retained for 1 day). Infrastructure review becomes as natural as code review.
+Collapsible details. Change counts at a glance. Full output is posted inline when it fits the comment size limit; otherwise, only the summary table is posted with a link to the workflow run summary. The table itself is trimmed with an omission row only if it still exceeds the limit. The workflow run summary holds up to about 900 KB per root; the complete `plan.txt`/`apply.txt` files are in the run artifacts (retained for 1 day). Infrastructure review becomes as natural as code review.
 
 ### ChatOps — Apply from the PR Comment Thread
 

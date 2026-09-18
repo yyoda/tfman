@@ -134,6 +134,7 @@ describe('post-comment.mjs', () => {
                 { id: 1, user: { type: 'Bot' }, body: PlanCommentBuilder.COMMENT_HEADER },
                 { id: 2, user: { type: 'User' }, body: PlanCommentBuilder.COMMENT_HEADER },
                 { id: 3, user: { type: 'Bot' }, body: 'Other bot comment' },
+                { id: 4, user: { type: 'Bot' }, body: '### 📋 Terraform Plan Details (Continued)' },
             ],
         }));
 
@@ -221,6 +222,17 @@ describe('post-comment.mjs', () => {
         assert.ok(body.includes('missing/log'));
         assert.ok(body.includes('❌'));
         assert.ok(body.includes('Plan Failed'));
+    });
+
+    it('should skip posting when processing artifacts produces an empty body', async () => {
+        glob.create.mock.mockImplementation(async () => globberMock);
+        globberMock.glob.mock.mockImplementation(async () => ['plans/invalid/info.json']);
+        fs.readFileSync.mock.mockImplementation(() => '{invalid json');
+
+        await postComment({ github, context, core, glob }, { mode: 'plan' }, { fs, path });
+
+        assert.equal(core.error.mock.calls.length, 1);
+        assert.equal(github.rest.issues.createComment.mock.calls.length, 0);
     });
 
     it('should handle no artifacts found case', async () => {
