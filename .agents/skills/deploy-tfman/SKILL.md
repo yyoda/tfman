@@ -79,8 +79,21 @@ for d in "$SOURCE_ROOT"/.github/tfman/*/; do
   cp -R "$d" "$WORK_DIR/.github/tfman/$name"
 done
 git -C "$WORK_DIR" rm -r -q --ignore-unmatch .github/tfman/tests
-cp -R "$SOURCE_ROOT/.github/workflows/." "$WORK_DIR/.github/workflows/"
+
+# Files shipped from .github/workflows/ are exactly this list — no more, no less.
+WORKFLOW_FILES=(
+  drift-detection.yml
+  manual-ops.yml
+  pr-comment.yml
+  pr-review.yml
+  README.md
+)
+for f in "${WORKFLOW_FILES[@]}"; do
+  cp "$SOURCE_ROOT/.github/workflows/$f" "$WORK_DIR/.github/workflows/$f"
+done
 ```
+
+> **Maintenance:** `WORKFLOW_FILES` is the complete, hardcoded list of what gets distributed — not "everything under `.github/workflows/`". If tfman gains a new workflow meant for consumer repos, add its filename here explicitly; otherwise it is silently skipped. See `.github/workflows/README.md`'s top-of-section note for the reverse pointer.
 
 ### Step 7 — Check for changes
 
@@ -122,7 +135,7 @@ Review notes:
 
 Echo the PR URL. Note that:
 
-- The diff covers only `.github/tfman/` (without `tests/`, which stays in tfman) and `.github/workflows/`.
+- The diff covers only `.github/tfman/` (without `tests/`, which stays in tfman) and the allowlisted files under `.github/workflows/` (`drift-detection.yml`, `manual-ops.yml`, `pr-comment.yml`, `pr-review.yml`, `README.md`).
 - Same-named workflow files were overwritten — the user should skim the PR diff for clobbered customizations.
 
 ## Knobs

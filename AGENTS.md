@@ -46,10 +46,7 @@ When investigating an issue, start from the entry point that matches the problem
 | Shared infrastructure logic | `modules/` |
 
 ## Workflow Files (`.github/workflows/`)
-- `pr-review.yml` — Terraform plan triggered on pull requests
-- `manual-ops.yml` — Manual apply and ops operations
-- `drift-detection.yml` — Scheduled drift detection
-- `pr-comment.yml` — Posts plan results as PR comments
+See `.github/workflows/README.md` for what each workflow does. For which of them get distributed to consumer repos, `.claude/commands/deploy-tfman/SKILL.md` (Step 6, `WORKFLOW_FILES`) is the single source of truth — do not duplicate that list here.
 
 ## Environments
 Each directory under `environments/` (e.g., `test1/`, `test2/`) is an independent Root Module with its own state file. When scoping an issue, confirm the target environment first.

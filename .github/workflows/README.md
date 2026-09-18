@@ -6,6 +6,8 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 
 ## GitHub Actions Workflows
 
+> Not every workflow here ships to consumer repos. `deploy-tfman`'s `SKILL.md` (Step 6, `WORKFLOW_FILES`) is the single source of truth for which ones are distributed — check it before assuming a workflow you add here will be rolled out automatically.
+
 ### PRReview
 - **PURPOSE**:
     - Determines Terraform execution paths and posts the results of `terraform plan` as a comment when a PR is created or updated.
