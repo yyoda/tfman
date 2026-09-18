@@ -16,7 +16,7 @@ import { logger } from './logger.mjs';
  */
 export async function runGitDiff(baseSha, headSha, root) {
   try {
-    const { stdout } = await runCommand('git', ['diff', '--name-only', '-z', '--no-renames', `${baseSha}...${headSha}`], { cwd: root });
+    const { stdout } = await runCommand('git', ['diff', '--name-only', '-z', '--no-renames', `${baseSha}...${headSha}`], { cwd: root, trimOutput: false });
     return stdout.split('\0').filter(Boolean);
   } catch (error) {
     throw new Error(`Error running git diff: ${error.message}`);

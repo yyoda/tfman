@@ -19,6 +19,11 @@ export async function run(args, dependencies = {}) {
   return result;
 }
 
+// Completed commands never schedule roots or pass resource targets downstream.
+function completedResult(message, command = 'error') {
+  return { command, targetDirs: [], tfTargets: [], message, done: true };
+}
+
 async function operate(args, dependencies) {
   const {
     _detectChanges = detectChanges,
@@ -31,35 +36,17 @@ async function operate(args, dependencies) {
 
   const parsed = _parseCommand(commentBody);
   if (!parsed) {
-    return {
-      command: 'error',
-      targetDirs: [],
-      tfTargets: [],
-      message: 'Not a valid command.',
-      done: true,
-    };
+    return completedResult('Not a valid command.');
   }
 
   // If the parser explicitly returned an error (e.g. invalid target path),
   // do not fall back to auto-detection.
   if (parsed.command === 'error') {
-    return {
-      command: 'error',
-      targetDirs: [],
-      tfTargets: [],
-      message: parsed.message || 'Invalid command.',
-      done: true,
-    };
+    return completedResult(parsed.message || 'Invalid command.');
   }
 
   if (parsed.command === 'help') {
-    return {
-      command: parsed.command,
-      targetDirs: [],
-      tfTargets: [],
-      message: parsed.message,
-      done: true,
-    };
+    return completedResult(parsed.message, 'help');
   }
 
   const { command, targetDirs: parsedTargetDirs = [], tfTargets = [] } = parsed;
@@ -71,13 +58,9 @@ async function operate(args, dependencies) {
       roles = [];
     }
     if (!Array.isArray(roles) || !roles.includes('applier')) {
-      return {
-        command: 'apply',
-        targetDirs: [],
-        tfTargets: [],
-        message: `User ${args.actor} does not have permission to apply. Required role: applier.`,
-        done: true,
-      };
+      return completedResult(
+        `User ${args.actor} does not have permission to apply. Required role: applier.`, 'apply'
+      );
     }
   }
   let targetDirs = [];
@@ -90,13 +73,7 @@ async function operate(args, dependencies) {
     }
 
     if (targetDirs.length === 0) {
-      return {
-        command: 'error',
-        targetDirs: [],
-        tfTargets: [],
-        message: 'No Terraform directories matched the criteria.',
-        done: true,
-      };
+      return completedResult('No Terraform directories matched the criteria.');
     }
 
     return {
@@ -108,12 +85,6 @@ async function operate(args, dependencies) {
     };
 
   } catch (error) {
-    return {
-      command: 'error',
-      targetDirs: [],
-      tfTargets: [],
-      message: error.message,
-      done: true,
-    };
+    return completedResult(error.message);
   }
 }

@@ -2,8 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { generateDependencyGraph, findTerraformRoots, resolveLocalModule } from '../../../lib/ops/deps-generator.mjs';
+import { join, relative } from 'node:path';
+import { generateDependencyGraph, findTerraformRoots, loadIgnorePatterns, resolveLocalModule } from '../../../lib/ops/deps-generator.mjs';
 
 const modulesJson = JSON.stringify({ Modules: [
   { Key: '', Source: '', Dir: '.' },
@@ -47,6 +47,28 @@ async function analyze(t, { modules = modulesJson, manifest, lockfile = true, sc
 }
 
 describe('resolveLocalModule', () => {
+  it('accepts dot-prefixed directory names but rejects paths outside the workspace', async t => {
+    const parent = await mkdtemp(join(tmpdir(), 'tfman-deps-'));
+    t.after(() => rm(parent, { recursive: true, force: true }));
+    const workspace = join(parent, 'workspace');
+    const rootAbs = join(workspace, 'env/a');
+    const localModule = join(workspace, '..shared');
+    const outsideModule = join(parent, 'outside');
+    for (const dir of [rootAbs, localModule, outsideModule]) {
+      await mkdir(dir, { recursive: true });
+    }
+    for (const [target, expected] of [
+      [localModule, '..shared'],
+      [workspace, null],
+      [parent, null],
+      [outsideModule, null],
+    ]) {
+      const source = relative(rootAbs, target);
+      assert.equal(await resolveLocalModule(rootAbs, source, '', workspace, null), expected);
+      assert.equal(await resolveLocalModule(rootAbs, source, target, workspace, null), expected);
+    }
+  });
+
   const accepted = [
     'git::https://github.com/org/tfman.git//modules/vpc',
     'git::https://github.com/org/tfman//modules/vpc',
@@ -82,6 +104,42 @@ describe('resolveLocalModule', () => {
 });
 
 describe('lib/ops/deps-generator', () => {
+  it('loads whitespace-separated literal ignore patterns and skips comment lines', async t => {
+    const workspace = await mkdtemp(join(tmpdir(), 'tfman-deps-'));
+    t.after(() => rm(workspace, { recursive: true, force: true }));
+    assert.deepEqual(await loadIgnorePatterns(undefined, workspace), new Set());
+    await writeFile(join(workspace, '.tfdepsignore'), '\n # ignored comment\r\n node_modules\t env/legacy \r\nnode_modules\ncache* cache?\n');
+    assert.deepEqual(await loadIgnorePatterns(undefined, workspace), new Set([
+      'node_modules', 'env/legacy', 'cache*', 'cache?',
+    ]));
+    const customFile = join(workspace, 'custom-ignore');
+    await writeFile(customFile, 'vendor\n');
+    assert.deepEqual(await loadIgnorePatterns(customFile, workspace), new Set(['vendor']));
+  });
+
+  it('ignores directory names at any depth and path prefixes at directory boundaries without glob matching', async t => {
+    const workspace = await mkdtemp(join(tmpdir(), 'tfman-deps-'));
+    t.after(() => rm(workspace, { recursive: true, force: true }));
+    const roots = [
+      'node_modules/pkg',
+      'env/current/node_modules/pkg',
+      'env/legacy',
+      'env/legacy/nested',
+      'env/legacy-v2',
+      'env/current',
+      'cache-one',
+      'cache2',
+    ];
+    for (const dir of roots) {
+      await mkdir(join(workspace, dir), { recursive: true });
+      await writeFile(join(workspace, dir, '.terraform-version'), '1.5.7\n');
+    }
+    const patterns = new Set(['node_modules', 'env/legacy', 'cache*', 'cache?']);
+    assert.deepEqual(await findTerraformRoots(workspace, patterns), [
+      'cache-one', 'cache2', 'env/current', 'env/legacy-v2',
+    ]);
+  });
+
   it('excludes the workspace root while including nested roots', async t => {
     const workspace = await mkdtemp(join(tmpdir(), 'tfman-deps-'));
     t.after(() => rm(workspace, { recursive: true, force: true }));

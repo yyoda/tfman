@@ -19,7 +19,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - Stale plan comments are removed on every run, including when no results were produced, by scanning all comment pages. A missing plan artifact for an expected root is shown as ❌ `Plan Failed`. Pushes with zero changed Terraform roots also delete old plan comments without posting a new comment.
 - **STATIC ANALYSIS** (steps appended to the `plan` job; per changed target, same scope as the plan):
     - **tflint** (gate) — installs the pinned `aws` plugin (cached under `~/.tflint.d/plugins`) and lints each changed root against the repo-root `.tflint.hcl`, passed via `--config` because tflint does not walk up to the repo root. Fails the job on findings at **warning severity or above** (hardcoded via `--minimum-failure-severity=warning`; edit that flag to change the threshold). Skipped when `.tflint.hcl` is absent. `.tflint.hcl`'s own `rule { enabled = false }` blocks already suppress `terraform_required_version` / `terraform_required_providers` (versions come from `.terraform-version`/tenv), so no CLI `--disable-rule` flags are needed.
-    - **trivy** (informational) — scans each changed root using the repo-root `trivy.yaml`, writes a HIGH/CRITICAL summary to the job log, and uploads the full JSON report as a `trivy-*` artifact. It **never fails the job** (`|| true`, no `--exit-code`) — advisory until the misconfiguration backlog is triaged. Skipped when `trivy.yaml` is absent.
+    - **trivy** (informational) — scans each changed root using the repo-root `trivy.yaml`, writes a HIGH/CRITICAL summary to the Job Summary, and uploads the full JSON report as a `trivy-*` artifact. It **never fails the job** (`|| true`, no `--exit-code`) — advisory until the misconfiguration backlog is triaged. Skipped when `trivy.yaml` is absent.
     - Both run **after** the plan steps and even when `terraform plan` fails (`if: ${{ !cancelled() }}`), so a lint failure never suppresses the plan preview — the plan comment is still posted (post-plan runs `always()`).
 
 ### ManualOps
@@ -27,7 +27,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - Manually executes `terraform apply` for specific directories using workflow_dispatch. Multiple directories can be specified.
 - **INPUT PARAMETERS**:
     - `targets`: Directory paths to apply (space-separated). Example: `app/dev app/prod`
-    - `tf_targets`: *(Optional)* Terraform resource addresses to restrict the operation to (space-separated). Passed as `-target=` flags to Terraform. Example: `aws_instance.example module.frontend`
+    - `tf_targets`: *(Optional)* Terraform resource addresses to restrict the operation to (whitespace-separated). Passed as literal `-target=` flags to Terraform, preserving indexes such as `aws_instance.web[0]` and `aws_instance.web["blue"]` without shell filename expansion. Example: `aws_instance.example module.frontend`
     - `command`: The command to execute. The default is `apply`, but `plan` can be specified as an option.
 - **CONDITIONS**:
     - **Execution User Restriction**: The executor (`github.actor`) must be listed in the `APPLIERS` repository variable. If not included, `terraform apply` is blocked.
@@ -54,7 +54,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 - **PURPOSE**:
     - Regularly executes `terraform plan` for all environments to detect discrepancies (Drift) between the code and the actual environment. It can also be executed manually.
 - **BEHAVIOR**:
-    - Executes `plan` for all directories defined in `.tfdeps.json`.
+    - Executes `plan` for all directories defined in `.tfdeps.json`. If the graph contains no roots, the drift job is skipped.
     - When a difference (Drift) is detected or an error occurs, the Workflow status becomes failed.
     - Notifications are optional (e.g., via GitHub Slack App workflow subscriptions; see **Slack Integration** below).
 
@@ -73,7 +73,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 
 Workflow testing has three layers:
 
-- Unit tests: `cd .github/tfman && node --test "tests/**/*.test.mjs"`.
+- Unit tests: `cd .github/tfman && node --test` (automatic discovery includes all nested test directories).
 - Static checks: run `actionlint`; LintWorkflows also runs it in CI.
 - End-to-end tests: run `bash scripts/e2e-prcomment.sh` locally from a checkout with no tracked changes, an `origin` remote, and authenticated `gh`. The script requires only Bash, `gh`, `jq`, `git`, `sed`, `date`, and `sleep`. It creates a temporary branch and draft PR on the current repository, exercises PRReview plans, ignored comments, PRComment plans, early cancellation, apply, and a broken formatting fixture, then posts a results table and closes the PR. It restores the original local branch and deletes the local test branch. The fixtures under `environments/` exist for this testing; `test1` and `test2` use only null/random providers and need no cloud credentials. Authorized apply requires the developer's login in `APPLIERS` and changes the fixture state.
 
@@ -112,7 +112,7 @@ A `.terraform-version` file must exist in all working directories.
 The repository root itself is never treated as a Terraform root; a root-level `.terraform-version` only pins the tool version. Nested roots are supported: a changed file is attributed to the deepest root that contains it. A local module that lives inside another root still triggers every root that consumes it.
 
 #### Optional Environment Variables (`.env`)
-When executing each job, if an `.env` file exists in `.github/env.d/<path>/`, it is automatically loaded. If it does not exist, the workflow logs a skip message and continues.
+When executing each job, if an `.env` file exists in `.github/env.d/<path>/`, its nonblank, noncomment lines are appended to `GITHUB_ENV`. Lines beginning with `#` after optional whitespace are comments; other lines are preserved as written. Empty files and files containing only comments or whitespace are valid and add no variables. If the file does not exist, the workflow logs a skip message and continues.
 
 #### Dependency Definition (`.tfdeps.json`)
 `DriftDetection` and parts of the change detection logic depend on the `.tfdeps.json` file, which defines the directory structure and dependencies. Regenerate it whenever a Terraform root is added, removed, or moved, whenever a root starts or stops using a local module, or whenever a root's provider set changes (`.terraform.lock.hcl`). The workflows also select cloud credentials from the recorded providers, so a stale entry can leave a root without the credentials its new provider needs.

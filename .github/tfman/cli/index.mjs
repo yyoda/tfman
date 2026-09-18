@@ -4,109 +4,64 @@ import { run as runDetectChanges } from './commands/detect-changes.mjs';
 import { run as runSelectTargets } from './commands/select-targets.mjs';
 import { run as runGenerateDeps } from './commands/generate-deps.mjs';
 import { run as runOperateCommand } from './commands/operate-command.mjs';
-
 import { run as runWriteResult } from './commands/write-result.mjs';
 
-const args = process.argv.slice(2);
-if (args.length === 0) {
-  console.error("Usage: node index.mjs <command> [options]");
-  process.exit(1);
-}
-
-const command = args[0];
-const commandArgs = args.slice(1);
+// Commands share parsing and error handling; each declares its string options
+// and whether its return value belongs on stdout.
+const commands = {
+  'detect-changes': {
+    run: runDetectChanges,
+    options: ['base', 'head', 'deps-file', 'output'],
+    printResult: values => !values.output,
+  },
+  'select-targets': {
+    run: runSelectTargets,
+    options: ['targets', 'output'],
+    printResult: values => !values.output,
+  },
+  'generate-deps': {
+    run: runGenerateDeps,
+    options: ['root', 'output', 'ignore-file'],
+  },
+  'write-result': {
+    run: runWriteResult,
+    options: ['path', 'command', 'outcome'],
+  },
+  'operate-command': {
+    run: runOperateCommand,
+    options: ['comment-body', 'base-sha', 'head-sha', 'roles', 'actor', 'github-output'],
+    printResult: () => true,
+  },
+};
 
 async function main() {
+  const [command, ...args] = process.argv.slice(2);
+  if (!command) {
+    console.error('Usage: node index.mjs <command> [options]');
+    process.exitCode = 1;
+    return;
+  }
+  if (!Object.hasOwn(commands, command)) {
+    console.error(`Unknown command: ${command}`);
+    process.exitCode = 1;
+    return;
+  }
+
   try {
-    switch (command) {
-      case 'detect-changes': {
-        const { values } = parseArgs({
-          args: commandArgs,
-          options: {
-            base: { type: 'string' },
-            head: { type: 'string' },
-            'deps-file': { type: 'string' },
-            output: { type: 'string' }
-          },
-          strict: false
-        });
-        const result = await runDetectChanges(values);
-        if (result && !values.output) {
-             console.log(JSON.stringify(result, null, 2));
-        }
-        break;
-      }
-      case 'select-targets': {
-        const { values } = parseArgs({
-            args: commandArgs,
-            options: {
-                targets: { type: 'string' },
-                output: { type: 'string' }
-            },
-            strict: false
-        });
-        const result = await runSelectTargets(values);
-        if (result && !values.output) {
-            console.log(JSON.stringify(result, null, 2));
-        }
-        break;
-      }
-      case 'generate-deps': {
-        const { values } = parseArgs({
-          args: commandArgs,
-          options: {
-            root: { type: 'string' },
-            output: { type: 'string' },
-            'ignore-file': { type: 'string' }
-          },
-          strict: false
-        });
-        await runGenerateDeps(values);
-        break;
-      }
-      case 'write-result': {
-        const { values } = parseArgs({
-          args: commandArgs,
-          options: {
-            path: { type: 'string' },
-            command: { type: 'string' },
-            outcome: { type: 'string' }
-          },
-          strict: false
-        });
-        await runWriteResult(values);
-        break;
-      }
-      case 'operate-command': {
-        const { values } = parseArgs({
-          args: commandArgs,
-          options: {
-            'comment-body': { type: 'string' },
-            'base-sha': { type: 'string' },
-            'head-sha': { type: 'string' },
-            roles: { type: 'string' },
-            actor: { type: 'string' },
-            'github-output': { type: 'string' }
-          },
-          strict: false
-        });
-        const result = await runOperateCommand(values);
-        if (result) {
-          console.log(JSON.stringify(result, null, 2));
-        }
-        break;
-      }
-      default:
-        console.error(`Unknown command: ${command}`);
-        process.exit(1);
+    const definition = commands[command];
+    const { values } = parseArgs({
+      args,
+      options: Object.fromEntries(definition.options.map(name => [name, { type: 'string' }])),
+      strict: false,
+    });
+    const result = await definition.run(values);
+    if (result && definition.printResult?.(values)) {
+      console.log(JSON.stringify(result, null, 2));
     }
   } catch (error) {
-    if (error.code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION') {
-       console.error(`Error: ${error.message}`);
-    } else {
-       console.error(`❌ ${error.message}`);
-    }
-    process.exit(1);
+    const prefix = error.code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION' ? 'Error:' : '❌';
+    console.error(`${prefix} ${error.message}`);
+    process.exitCode = 1;
   }
 }
 

@@ -2,10 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFile, access, appendFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 
-/**
- * Checks if a file or directory exists.
- ...
- */
+/** Checks if a file or directory exists. */
 export async function exists(path) {
   try {
     await access(path, constants.F_OK);
@@ -19,7 +16,7 @@ export async function exists(path) {
  * Execute a command.
  * @param {string} command - The command to run.
  * @param {string[]} [args] - Arguments for the command.
- * @param {object} [options] - Options for spawn.
+ * @param {object} [options] - Spawn options; trimOutput defaults to true.
  * @returns {Promise<{stdout: string, stderr: string}>}
  */
 export function runCommand(command, args = [], options = {}) {
@@ -30,18 +27,10 @@ export function runCommand(command, args = [], options = {}) {
       args = [];
     }
 
-    // Default shell: false for security. If command is a full shell string,
-    // caller must explicitly opt-in or split it manually (but prefer splitting).
-    const spawnOptions = { shell: false, ...options };
+    const { trimOutput = true, ...optionsForSpawn } = options;
+    const spawnOptions = { shell: false, ...optionsForSpawn };
 
-    // Handle case where legacy implementation passed a full string command
-    // and shell: true was implicit/default.
-    // If we receive a command with spaces and no args, and shell is NOT explicitly true,
-    // we should try to be helpful but safe. 
-    // Ideally, callers should be updated. For this refactor, we enforce shell: false default.
-
-    // If logic above is too strict for existing callers that do `runCommand('git rev-parse ...')`
-    // we can perform a simple split if args is empty.
+    // Preserve legacy whitespace-separated commands without invoking a shell.
     if (args.length === 0 && command.includes(' ') && !spawnOptions.shell) {
       const parts = command.split(/\s+/);
       command = parts[0];
@@ -66,11 +55,12 @@ export function runCommand(command, args = [], options = {}) {
     });
 
     child.on('close', (code) => {
-      stdoutChunks.length > 0 ? Buffer.concat(stdoutChunks).toString('utf-8').trim() : '';
-      stderrChunks.length > 0 ? Buffer.concat(stderrChunks).toString('utf-8').trim() : '';
-
-      const stdout = stdoutChunks.length > 0 ? Buffer.concat(stdoutChunks).toString('utf-8').trim() : '';
-      const stderr = stderrChunks.length > 0 ? Buffer.concat(stderrChunks).toString('utf-8').trim() : '';
+      const decode = chunks => {
+        const text = Buffer.concat(chunks).toString('utf-8');
+        return trimOutput ? text.trim() : text;
+      };
+      const stdout = decode(stdoutChunks);
+      const stderr = decode(stderrChunks);
 
       if (code !== 0) {
         const error = new Error(`Command failed: ${command}\n${stderr}`);

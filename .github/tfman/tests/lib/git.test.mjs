@@ -71,7 +71,7 @@ describe('runGitDiff path handling', () => {
   let mainSha;
   let renameSha;
   let featureSha;
-  const specialPath = 'envs/dev/日本語 ファイル.tf';
+  const specialPath = ' envs/dev/日本語 ファイル.tf';
 
   before(async () => {
     repoDir = await mkdtemp(join(tmpdir(), 'tfman-git-paths-'));
@@ -92,6 +92,7 @@ describe('runGitDiff path handling', () => {
     renameSha = (await runCommand('git', ['rev-parse', 'HEAD'], { cwd: repoDir })).stdout.trim();
 
     await mkdir(join(repoDir, 'envs/dev'), { recursive: true });
+    await mkdir(join(repoDir, ' envs/dev'), { recursive: true });
     await writeFile(join(repoDir, specialPath), '# Special filename\n');
     await runCommand('git', ['add', specialPath], { cwd: repoDir });
     await runCommand('git', ['commit', '-q', '-m', 'Add special filename'], { cwd: repoDir });
@@ -111,7 +112,7 @@ describe('runGitDiff path handling', () => {
     ]);
   });
 
-  it('preserves non-ASCII characters and spaces without quoting paths', async () => {
+  it('preserves non-ASCII characters and leading spaces without quoting paths', async () => {
     assert.deepStrictEqual(await runGitDiff(renameSha, featureSha, repoDir), [specialPath]);
   });
 });

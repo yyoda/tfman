@@ -203,7 +203,7 @@ Create a directory for each Terraform root under `environments/`. Each directory
 - `.terraform-version` **(required)** — pins the Terraform version; environments without this file are ignored by the pipeline
 - `.github/env.d/<path>/.env` *(optional\*)* — loaded automatically before each CI job; used to configure per-environment cloud credentials via OIDC
 
-\* Note: If `.env` is missing, the workflow logs ".env not found, skipping" and continues.
+\* Note: If `.env` is missing, the workflow logs ".env not found, skipping" and continues. Empty files and files containing only comments or whitespace also continue without adding variables.
 
 Example `.env` for AWS (placed in `.github/env.d/<path>/.env`):
 
@@ -312,6 +312,7 @@ node .github/tfman/cli/index.mjs <command> [options]
 | `detect-changes --base <sha> --head <sha>` | Map a git diff to affected roots |
 | `select-targets --targets "dir1 dir2"` | Validate and format targets for the matrix |
 | `operate-command --comment-body "..." --base-sha ... --head-sha ...` | Parse a PR comment command |
+| `write-result --path <root> --command <plan\|apply> --outcome <outcome>` | Write result metadata and the Job Summary |
 
 For full option details, see [`.github/workflows/README.md`](.github/workflows/README.md).
 
@@ -319,7 +320,7 @@ For full option details, see [`.github/workflows/README.md`](.github/workflows/R
 
 ## Quick Start with an AI Agent
 
-The repository ships a [`deploy-tfman`](.agents/skills/deploy-tfman/SKILL.md) skill at [`.agents/skills/deploy-tfman/`](.agents/skills/deploy-tfman/) that an AI coding agent (Claude Code, etc.) can run from inside a tfman checkout to open a pull request that mirrors `scripts` and `workflows` into your target repository.
+The repository ships a [`deploy-tfman`](.agents/skills/deploy-tfman/SKILL.md) skill at [`.agents/skills/deploy-tfman/`](.agents/skills/deploy-tfman/) that an AI coding agent (Claude Code, etc.) can run from inside a tfman checkout to open a pull request that mirrors `.github/tfman/` (excluding tests) and the allowlisted `.github/workflows/` files into your target repository.
 
 ### How to use it
 

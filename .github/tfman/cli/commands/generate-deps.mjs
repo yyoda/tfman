@@ -1,20 +1,20 @@
 import { join, resolve } from 'node:path';
 import { runCommand as defaultRunCommand, getWorkspaceRoot as defaultGetWorkspaceRoot } from '../../lib/utils.mjs';
 import { logger as defaultLogger } from '../../lib/logger.mjs';
-import { generateDependencyGraph as defaultGenerateDependencyGraph } from '../../lib/ops/deps-generator.mjs';
-import { loadIgnorePatterns as defaultLoadIgnorePatterns } from '../../lib/ops/deps-generator.mjs';
-import { getRepoIdentity as defaultGetRepoIdentity } from '../../lib/git.mjs';
+import {
+  generateDependencyGraph as defaultGenerateDependencyGraph,
+  loadIgnorePatterns as defaultLoadIgnorePatterns
+} from '../../lib/ops/deps-generator.mjs';
 import { writeFile as defaultWriteFile } from 'node:fs/promises';
 
 export async function run(args, dependencies = {}) {
   const {
-      generateDependencyGraph = defaultGenerateDependencyGraph,
-      loadIgnorePatterns = defaultLoadIgnorePatterns,
-      runCommand = defaultRunCommand,
-      getWorkspaceRoot = defaultGetWorkspaceRoot,
-      getRepoIdentity = defaultGetRepoIdentity,
-      logger = defaultLogger,
-      writeFile = defaultWriteFile
+    generateDependencyGraph = defaultGenerateDependencyGraph,
+    loadIgnorePatterns = defaultLoadIgnorePatterns,
+    runCommand = defaultRunCommand,
+    getWorkspaceRoot = defaultGetWorkspaceRoot,
+    logger = defaultLogger,
+    writeFile = defaultWriteFile
   } = dependencies;
 
   const { root: rootArg, output, 'ignore-file': ignoreFile } = args;
@@ -23,8 +23,7 @@ export async function run(args, dependencies = {}) {
   try {
     await runCommand('terraform', ['-version']);
   } catch (err) {
-    logger.error("❌️ Error: 'terraform' command not found or failed to run.", err.message);
-    process.exit(1);
+    throw new Error(`'terraform' command not found or failed to run: ${err.message}`, { cause: err });
   }
 
   logger.info(`🔍 Discovery: Scanning ${root} for Terraform roots...`);
@@ -32,22 +31,13 @@ export async function run(args, dependencies = {}) {
   const ignorePatterns = await loadIgnorePatterns(ignoreFile, root);
 
   logger.info(`🚀 Analysis: Generating dependency graph...`);
-  
-  const { results, roots } = await generateDependencyGraph(root, ignorePatterns);
 
-  if (roots) {
-      if (typeof getRepoIdentity === 'function') {
-        const repoIdentity = await getRepoIdentity(root);
-        if (repoIdentity) {
-          logger.info(`Detected repository identity: ${repoIdentity}`);
-        }
-      }
-  }
-  
-  // Sort and process results to match original output format
+  const { results } = await generateDependencyGraph(root, ignorePatterns);
+
+  // Keep generated output deterministic across filesystem traversal orders.
   results.sort((a, b) => a.root.localeCompare(b.root));
 
-  const moduleUsage = {};
+  const moduleUsage = new Map();
   const failedRoots = [];
   const rootObjects = [];
 
@@ -65,8 +55,8 @@ export async function run(args, dependencies = {}) {
       });
 
       for (const mod of res.modules) {
-        if (!moduleUsage[mod]) moduleUsage[mod] = [];
-        moduleUsage[mod].push(res.root);
+        if (!moduleUsage.has(mod)) moduleUsage.set(mod, []);
+        moduleUsage.get(mod).push(res.root);
       }
     } else {
       logger.error(`❌ ${res.root}`);
@@ -76,15 +66,14 @@ export async function run(args, dependencies = {}) {
   }
 
   if (failedRoots.length > 0) {
-    logger.error(`❌ Analysis failed for ${failedRoots.length} roots.`);
-    process.exit(1);
+    throw new Error(`Analysis failed for ${failedRoots.length} roots.`);
   }
 
   const outputObject = {
     dirs: rootObjects,
-    modules: Object.keys(moduleUsage).sort().map(mod => ({
-        source: mod,
-        usedIn: moduleUsage[mod].sort()
+    modules: Array.from(moduleUsage.keys()).sort().map(mod => ({
+      source: mod,
+      usedIn: moduleUsage.get(mod).sort()
     }))
   };
 
