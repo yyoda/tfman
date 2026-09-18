@@ -16,11 +16,9 @@ export function calculateExecutionPaths(changedFiles, depsData) {
 
   // Maps for quick lookup
   const rootProviders = new Map();
-  const knownRoots = new Set();
 
   for (const item of dirsData) {
     if (item.path) {
-      knownRoots.add(item.path);
       rootProviders.set(item.path, item.providers || []);
     }
   }
@@ -33,7 +31,7 @@ export function calculateExecutionPaths(changedFiles, depsData) {
     }
   }
 
-  const sortedRoots = Array.from(knownRoots).sort((a, b) => b.length - a.length);
+  const sortedRoots = Array.from(rootProviders.keys()).sort((a, b) => b.length - a.length);
 
   // Sort modules descending by length to match longest path first
   const sortedModules = Array.from(moduleUsageMap.keys()).sort((a, b) => b.length - a.length);
@@ -61,16 +59,9 @@ export function calculateExecutionPaths(changedFiles, depsData) {
   }
 
   // Resolve module dependencies
-  if (changedModules.size > 0) {
-    for (const changedModule of changedModules) {
-      const consumers = moduleUsageMap.get(changedModule);
-      if (consumers) {
-        for (const consumer of consumers) {
-          if (!affectedRoots.has(consumer)) {
-            affectedRoots.add(consumer);
-          }
-        }
-      }
+  for (const changedModule of changedModules) {
+    for (const consumer of moduleUsageMap.get(changedModule)) {
+      affectedRoots.add(consumer);
     }
   }
 

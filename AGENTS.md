@@ -18,7 +18,7 @@ Agents are authorized to use or reference these commands:
 - **Validation:** `terraform validate`
 - **Formatting:** `terraform fmt -recursive`
 - **Planning:** `terraform plan` (Always notify the user of any resource destruction)
-- **Testing:** `node --test .github/tfman/tests/**/*.test.mjs` (Node.js built-in runner, not npm)
+- **Testing:** `cd .github/tfman && node --test` (Node.js built-in runner, not npm; discovers all nested test directories)
 
 # Standard Project Structure
 
@@ -46,7 +46,7 @@ When investigating an issue, start from the entry point that matches the problem
 | Shared infrastructure logic | `modules/` |
 
 ## Workflow Files (`.github/workflows/`)
-See `.github/workflows/README.md` for what each workflow does. For which of them get distributed to consumer repos, `.claude/commands/deploy-tfman/SKILL.md` (Step 6, `WORKFLOW_FILES`) is the single source of truth — do not duplicate that list here.
+See `.github/workflows/README.md` for what each workflow does. For which of them get distributed to consumer repos, `.agents/skills/deploy-tfman/SKILL.md` (Step 6, `WORKFLOW_FILES`) is the single source of truth — do not duplicate that list here.
 
 ## Environments
 Each directory under `environments/` (e.g., `test1/`, `test2/`) is an independent Root Module with its own state file. When scoping an issue, confirm the target environment first.
@@ -107,7 +107,7 @@ Use sub-agents to offload research and parallel analysis, protecting the main co
 ## Verification Before Completion
 Do not mark a task as complete until you can prove it works.
 
-- Run tests (`node --test .github/tfman/tests/**/*.test.mjs`), confirm logs, and validate behavior.
+- Run tests (`cd .github/tfman && node --test`), confirm logs, and validate behavior.
 - Before finalizing, self-review the output against the Best Practices section above.
 
 ## Autonomous Bug Fixing

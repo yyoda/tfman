@@ -1,6 +1,6 @@
-import { join, relative, resolve, isAbsolute } from 'node:path';
+import { join, relative, resolve, isAbsolute, sep } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
-import { exists, runCommand, getWorkspaceRoot, loadJson } from '../utils.mjs';
+import { exists, runCommand } from '../utils.mjs';
 import { getRepoIdentity, normalizeRepoIdentity } from '../git.mjs';
 import { logger } from '../logger.mjs';
 
@@ -22,7 +22,7 @@ export async function loadIgnorePatterns(ignoreFilePath, root) {
     if (!line || line.startsWith('#')) continue;
 
     // Support both "one pattern per line" and "space-separated" formats.
-    for (const token of line.split(/\s+/).map(t => t.trim()).filter(Boolean)) {
+    for (const token of line.split(/\s+/)) {
       patterns.add(token);
     }
   }
@@ -37,38 +37,28 @@ export async function loadIgnorePatterns(ignoreFilePath, root) {
  */
 export async function findTerraformRoots(root, ignorePatterns) {
   const roots = [];
+  const patterns = [...ignorePatterns];
 
   async function walk(dir) {
     const relDir = relative(root, dir);
-    if (relDir && ignorePatterns.has(relDir)) return;
-
-    // Check if current directory path components match any ignore pattern if needed
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.isDirectory()) {
-         const entryPath = join(dir, entry.name);
-         const relEntry = relative(root, entryPath);
-
-         // Recursively check ignore patterns
-         let isIgnored = false;
-         for (const pattern of ignorePatterns) {
-           if (relEntry === pattern || relEntry.startsWith(pattern + '/') || entry.name === pattern) {
-             isIgnored = true;
-             break;
-           }
-         }
-
-         if (!isIgnored) {
-           await walk(entryPath);
-         } else {
-           logger.info(`[skip] ${relEntry}`);
-         }
+        const entryPath = join(dir, entry.name);
+        const relEntry = relative(root, entryPath);
+        const isIgnored = patterns.some(pattern =>
+          relEntry === pattern || relEntry.startsWith(pattern + '/') || entry.name === pattern
+        );
+        if (isIgnored) {
+          logger.info(`[skip] ${relEntry}`);
+          continue;
+        }
+        await walk(entryPath);
       } else if (entry.name === '.terraform-version') {
-        const relRoot = relative(root, dir);
-        if (relRoot === '') {
+        if (relDir === '') {
           logger.info('[skip] .terraform-version at workspace root (tool version pin, not a Terraform root)');
         } else {
-          roots.push(relRoot);
+          roots.push(relDir);
         }
       }
     }
@@ -105,11 +95,10 @@ export async function resolveLocalModule(rootAbs, source, dirPath, workspaceRoot
   // 2. Local paths
   if (!candidatePath) {
     if (dirPath && isAbsolute(dirPath)) {
-        // If dirPath is absolute, use it directly (sometimes Terraform provides this)
-        candidatePath = dirPath;
+      candidatePath = dirPath;
     } else if (dirPath) {
       candidatePath = resolve(rootAbs, dirPath);
-    } else if (source.startsWith('.') || source.startsWith('..')) {
+    } else if (source.startsWith('.')) {
       // Clean source of potential double slashes for local paths just in case
       const cleanSource = source.split('//').join('/');
       candidatePath = resolve(rootAbs, cleanSource);
@@ -118,14 +107,10 @@ export async function resolveLocalModule(rootAbs, source, dirPath, workspaceRoot
   }
 
   if (candidatePath && (await exists(candidatePath))) {
-    try {
-      const rel = relative(workspaceRoot, candidatePath);
-      // Ensure it's not outside the workspace
-      if (rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)) {
-         return rel;
-      }
-    } catch {
-      // failed
+    const rel = relative(workspaceRoot, candidatePath);
+    const isOutsideWorkspace = rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+    if (rel !== '' && !isOutsideWorkspace) {
+      return rel;
     }
   }
   return null;
@@ -154,10 +139,10 @@ async function extractModules(rootAbs, workspaceRoot, repoIdentity, logs, runCom
 
     let data;
     try {
-        data = JSON.parse(stdout);
+      data = JSON.parse(stdout);
     } catch (e) {
-        logs.push(`❌ JSON decode error (modules) in ${rootAbs}: ${e.message}`);
-        return null;
+      logs.push(`❌ JSON decode error (modules) in ${rootAbs}: ${e.message}`);
+      return null;
     }
 
     const modulesRaw = Array.isArray(data?.Modules) ? data.Modules : data?.modules;
@@ -168,9 +153,7 @@ async function extractModules(rootAbs, workspaceRoot, repoIdentity, logs, runCom
     const modulesSet = new Set();
 
     for (const m of modulesRaw) {
-      // "Source" is the key in older Terraform versions, "source" in newer?
-      // Checking both to cover bases, or just strictly based on what `terraform modules -json` outputs.
-      // Usually the output keys are uppercased in Go but json output might vary by version.
+      // Support the initialized manifest and the modules command's JSON fields.
       const source = m.Source || m.source;
       if (!source) continue;
 
@@ -206,7 +189,7 @@ async function extractProviders(rootAbs, logs, runCommand) {
     return providers.sort();
   }
 
-  // If Fallback: .terraform.lock.hcl does not exist
+  // Query installed provider schemas when no lockfile is available.
   try {
     const { stdout } = await runCommand('terraform', ['providers', 'schema', '-json'], { cwd: rootAbs });
     const data = JSON.parse(stdout);
@@ -241,7 +224,6 @@ async function analyzeRoot(rootRelPath, workspaceRoot, repoIdentity, runCommand)
   // Ensure .terraform exists (initialized)
   if (!(await exists(dotTerraform))) {
     try {
-      // Ideally we should use 'terraform init -backend=false', but simplistic init might be enough for modules/providers
       logger.info(`[${rootRelPath}] Running terraform init...`);
       await runCommand('terraform', ['init', '-backend=false', '-input=false'], { cwd: rootAbs });
     } catch (error) {
@@ -266,18 +248,17 @@ async function analyzeRoot(rootRelPath, workspaceRoot, repoIdentity, runCommand)
 /**
  * Generate dependency graph for all Terraform roots in the workspace.
  * @param {string} workspaceRoot - Absolute path to workspace root.
- * @param {string[]} ignorePatterns - List of glob patterns to ignore.
+ * @param {Set<string>} ignorePatterns - Directory names or relative path prefixes to ignore (not globs).
  * @returns {Promise<object>} - { results: Array<AnalysisResult>, roots: string[] }
  */
 export async function generateDependencyGraph(workspaceRoot, ignorePatterns, dependencies = {}) {
   const { runCommand: executeCommand = runCommand, getRepoIdentity: resolveRepoIdentity = getRepoIdentity } = dependencies;
   const repoIdentity = await resolveRepoIdentity(workspaceRoot);
+  if (repoIdentity) logger.info(`Detected repository identity: ${repoIdentity}`);
   const roots = await findTerraformRoots(workspaceRoot, ignorePatterns);
 
   logger.info(`Found ${roots.length} Terraform roots. Starting analysis...`);
 
-  // Running in parallel might be heavy if there are many roots (init runs concurrent)
-  // But for now, let's keep it parallel as per original implementation logic (implied).
   const promises = roots.map(r => analyzeRoot(r, workspaceRoot, repoIdentity, executeCommand));
   const results = await Promise.all(promises);
 

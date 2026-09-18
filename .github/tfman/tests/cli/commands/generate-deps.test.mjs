@@ -19,24 +19,23 @@ describe('cli/commands/generate-deps', () => {
 
   const mockGetWorkspaceRoot = async () => '/mock/root';
   const mockLoadIgnorePatterns = async () => [];
-  const mockGetRepoIdentity = async () => 'github.com/owner/mock-repo';
 
   it('should generate dependency graph successfully', async (context) => {
     const mockGenerateDependencyGraph = async () => ({
       results: [
-        { 
-          root: 'env/prod', 
-          status: 'success', 
-          providers: ['aws'], 
+        {
+          root: 'env/prod',
+          status: 'success',
+          providers: ['aws'],
           modules: ['mod-a'],
-          logs: [] 
+          logs: []
         },
-        { 
-            root: 'env/dev', 
-            status: 'success', 
-            providers: ['aws'], 
+        {
+            root: 'env/dev',
+            status: 'success',
+            providers: ['aws'],
             modules: ['mod-a'],
-            logs: [] 
+            logs: []
           }
       ],
       roots: ['env/prod', 'env/dev']
@@ -51,7 +50,6 @@ describe('cli/commands/generate-deps', () => {
       getWorkspaceRoot: mockGetWorkspaceRoot,
       generateDependencyGraph: mockGenerateDependencyGraph,
       loadIgnorePatterns: mockLoadIgnorePatterns,
-      getRepoIdentity: mockGetRepoIdentity,
       writeFile: mockWriteFile
     };
 
@@ -60,7 +58,7 @@ describe('cli/commands/generate-deps', () => {
     assert.strictEqual(mockWriteFile.mock.callCount(), 1);
     const [path, content] = mockWriteFile.mock.calls[0].arguments;
     assert.strictEqual(path, 'deps.json');
-    
+
     const json = JSON.parse(content);
     assert.strictEqual(json.dirs.length, 2);
     assert.strictEqual(json.modules.length, 1);
@@ -68,30 +66,27 @@ describe('cli/commands/generate-deps', () => {
     assert.deepStrictEqual(json.modules[0].usedIn, ['env/dev', 'env/prod']);
   });
 
-  it('should exit if terraform command fails', async (context) => {
-      // We need to mock process.exit to prevent test runner from exiting
-      const mockExit = context.mock.method(process, 'exit', () => { throw new Error('Process exited'); });
-      
+  it('should reject without writing if terraform command fails', async (context) => {
+
+      const writeFile = context.mock.fn();
       const mockRunCommandFail = async () => { throw new Error('Terraform not found'); };
-      
+
       const deps = {
         logger: mockLogger,
         runCommand: mockRunCommandFail,
         getWorkspaceRoot: mockGetWorkspaceRoot,
         generateDependencyGraph: async () => ({}),
         loadIgnorePatterns: mockLoadIgnorePatterns,
-        getRepoIdentity: mockGetRepoIdentity, // Provide mock to avoid using default
-        writeFile: async () => {} 
+        writeFile
       };
 
-      await assert.rejects(async () => await run({}, deps), /Process exited/);
-      assert.strictEqual(mockExit.mock.callCount(), 1);
-      assert.strictEqual(mockExit.mock.calls[0].arguments[0], 1);
+      await assert.rejects(run({}, deps), /terraform.*Terraform not found/);
+      assert.strictEqual(writeFile.mock.callCount(), 0);
   });
 
-  it('should exit if analysis has failures', async (context) => {
-    const mockExit = context.mock.method(process, 'exit', () => { throw new Error('Process exited'); });
+  it('should reject without writing a partial graph if analysis has failures', async (context) => {
 
+    const writeFile = context.mock.fn();
     const mockGenerateFail = async () => ({
         results: [
             { root: 'env/fail', status: 'failure', logs: ['error log'] }
@@ -105,11 +100,30 @@ describe('cli/commands/generate-deps', () => {
         getWorkspaceRoot: mockGetWorkspaceRoot,
         generateDependencyGraph: mockGenerateFail,
         loadIgnorePatterns: mockLoadIgnorePatterns,
-        getRepoIdentity: mockGetRepoIdentity, // Provide mock to avoid using default
-        writeFile: async () => {}
+        writeFile
     };
 
-    await assert.rejects(async () => await run({}, deps), /Process exited/);
-    assert.strictEqual(mockExit.mock.callCount(), 1);
+    await assert.rejects(run({}, deps), /Analysis failed for 1 roots/);
+    assert.strictEqual(writeFile.mock.callCount(), 0);
+  });
+});
+
+it('supports local module paths that match Object prototype keys', async (context) => {
+  const modules = ['constructor', 'toString', '__proto__'];
+  const writeFile = context.mock.fn();
+  await run({ root: '/mock/root' }, {
+    runCommand: async () => {},
+    loadIgnorePatterns: async () => new Set(),
+    generateDependencyGraph: async () => ({
+      results: [{ root: 'env/dev', status: 'success', providers: [], modules, logs: [] }],
+    }),
+    logger: { info() {}, warning() {}, error() {} },
+    writeFile,
+  });
+  const [path, content] = writeFile.mock.calls[0].arguments;
+  assert.strictEqual(path, '/mock/root/.tfdeps.json');
+  assert.deepStrictEqual(JSON.parse(content), {
+    dirs: [{ path: 'env/dev', providers: [] }],
+    modules: [...modules].sort().map(source => ({ source, usedIn: ['env/dev'] })),
   });
 });

@@ -163,7 +163,7 @@ jobs:
         run: |
           ENV_FILE="${{ github.workspace }}/.github/env.d/${{ matrix.path }}/.env"
           if [ -f "$ENV_FILE" ]; then
-            grep -v '^\s*#' "$ENV_FILE" | grep -v '^\s*$' >> "$GITHUB_ENV"
+            awk '!/^[[:space:]]*(#|$)/' "$ENV_FILE" >> "$GITHUB_ENV"
           else
             echo ".env not found, skipping"
           fi

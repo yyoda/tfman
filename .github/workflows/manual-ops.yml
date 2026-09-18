@@ -114,7 +114,7 @@ jobs:
         run: |
           ENV_FILE="${{ github.workspace }}/.github/env.d/${{ matrix.path }}/.env"
           if [ -f "$ENV_FILE" ]; then
-            grep -v '^\s*#' "$ENV_FILE" | grep -v '^\s*$' >> "$GITHUB_ENV"
+            awk '!/^[[:space:]]*(#|$)/' "$ENV_FILE" >> "$GITHUB_ENV"
           else
             echo ".env not found, skipping"
           fi
@@ -168,6 +168,8 @@ jobs:
         env:
           TF_TARGETS: ${{ inputs.tf_targets }}
         run: |
+          # Split on whitespace without expanding resource indexes as filename globs.
+          set -f
           TARGET_FLAGS=()
           for addr in $TF_TARGETS; do
             TARGET_FLAGS+=("-target=$addr")
@@ -185,6 +187,8 @@ jobs:
             echo "User $ACTOR does not have permission to apply. Required role: applier."
             exit 1
           fi
+          # Split on whitespace without expanding resource indexes as filename globs.
+          set -f
           TARGET_FLAGS=()
           for addr in $TF_TARGETS; do
             TARGET_FLAGS+=("-target=$addr")

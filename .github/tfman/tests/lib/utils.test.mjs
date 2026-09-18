@@ -29,6 +29,13 @@ describe('utils.mjs', () => {
       );
     });
 
+    it('preserves output whitespace when trimming is disabled', async () => {
+      const output = ' leading\tand trailing \n';
+      const script = `process.stdout.write(${JSON.stringify(output)}); process.stderr.write(${JSON.stringify(output)})`;
+      const result = await runCommand(process.execPath, ['-e', script], { trimOutput: false });
+      assert.deepStrictEqual(result, { stdout: output, stderr: output });
+    });
+
     it('should return stderr content', async () => {
       // Cannot use shell redirection >&2 with shell: false.
       // Need a way to write to stderr without shell.

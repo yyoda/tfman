@@ -33,33 +33,23 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
     plan: {
       logFile: 'plan.txt',
       artifactPattern: 'plans/**/info.json',
-      builder: {
-        factory: () => new PlanCommentBuilder(),
-        add: (builder, path, content, outcome) => builder.addResult(path, content, outcome),
-        build: (builder) => builder.buildComment({ runUrl })
-      }
+      Builder: PlanCommentBuilder
     },
     apply: {
       logFile: 'apply.txt',
       artifactPattern: 'applies/**/info.json',
-      builder: {
-        factory: () => new ApplyCommentBuilder(),
-        add: (builder, path, content, outcome) => builder.addResult(path, content, outcome),
-        build: (builder) => builder.buildComment({ runUrl })
-      }
+      Builder: ApplyCommentBuilder
     }
   };
 
-  const behavior = behaviors[config.mode];
+  const behavior = Object.hasOwn(behaviors, config.mode) ? behaviors[config.mode] : null;
   if (!behavior) {
     if (core) core.setFailed(`Unsupported mode: ${config.mode}`);
     return;
   }
 
-  // Use the builder factory to get an instance
-  const builder = behavior.builder.factory();
-  // Retrieve content headers from the instance's constructor
-  const COMMENT_HEADER = builder.constructor.COMMENT_HEADER;
+  const builder = new behavior.Builder();
+  const COMMENT_HEADER = behavior.Builder.COMMENT_HEADER;
 
   const cleanupPreviousComments = async () => {
     if (!config.deletePreviousComments) return;
@@ -127,8 +117,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       const content = logExists ? fs.readFileSync(logPath, 'utf8') : '(Log file not found)';
       const outcome = logExists ? (info.outcome ?? 'success') : 'failure';
       
-      // Use the builder definition add method
-      behavior.builder.add(builder, info.path, content, outcome);
+      builder.addResult(info.path, content, outcome);
       resultPaths.add(info.path);
 
     } catch (error) {
@@ -138,12 +127,12 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
 
   for (const expectedPath of new Set(config.expectedPaths)) {
     if (!resultPaths.has(expectedPath)) {
-      behavior.builder.add(builder, expectedPath, '(No result artifact was produced for this path — the job may have been cancelled or failed before uploading)', 'failure');
+      builder.addResult(expectedPath, '(No result artifact was produced for this path — the job may have been cancelled or failed before uploading)', 'failure');
     }
   }
 
   // 4. Generate the comment body and post
-  const body = behavior.builder.build(builder);
+  const body = builder.buildComment({ runUrl });
 
   try {
     if (body) {

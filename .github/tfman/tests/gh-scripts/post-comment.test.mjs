@@ -78,6 +78,15 @@ describe('post-comment.mjs', () => {
         assert.match(core.setFailed.mock.calls[0].arguments[0], /Unsupported mode/);
     });
 
+    for (const mode of ['constructor', '__proto__', 'toString']) {
+        it(`rejects unsupported mode ${mode} without using inherited properties`, async () => {
+            const setFailed = mock.fn();
+            await postComment({ github, context, core: { setFailed }, glob }, { mode }, { fs, path });
+            assert.equal(setFailed.mock.callCount(), 1);
+            assert.equal(setFailed.mock.calls[0].arguments[0], `Unsupported mode: ${mode}`);
+        });
+    }
+
     it('should execute Plan logic cleanly', async () => {
         // Setup data
         glob.create.mock.mockImplementation(async () => globberMock);
