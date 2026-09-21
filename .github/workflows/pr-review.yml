@@ -39,17 +39,10 @@ jobs:
         id: set-matrix
         run: |
           set -euo pipefail
-          CHANGES=$(node .github/tfman/cli/index.mjs detect-changes \
+          node .github/tfman/cli/index.mjs detect-changes \
             --base ${{ github.event.pull_request.base.sha }} \
-            --head ${{ github.event.pull_request.head.sha }} | jq -c '{include: .}')
-          echo "$CHANGES" | jq .
-          {
-            echo "matrix<<EOF"
-            echo "$CHANGES"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-          HAS_CHANGES=$(echo "$CHANGES" | jq '.include | length > 0')
-          echo "has-changes=$HAS_CHANGES" >> "$GITHUB_OUTPUT"
+            --head ${{ github.event.pull_request.head.sha }} \
+            | node .github/tfman/gh-scripts/write-outputs.mjs matrix
 
   plan:
     needs: detect-changes

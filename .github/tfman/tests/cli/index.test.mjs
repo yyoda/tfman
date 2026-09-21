@@ -1,18 +1,36 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const execute = promisify(execFile);
 const cli = fileURLToPath(new URL('../../cli/index.mjs', import.meta.url));
 const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url));
 
+// Exercise the same pipe as the workflows, including upstream failure handling.
+// Arguments travel as argv, so paths and comment bodies are never shell source.
+async function invokeWithOutputs(entry, args, { githubOutput, ...options } = {}) {
+  if (!githubOutput) return execute(process.execPath, [entry, ...args], options);
+  const adapter = join(dirname(entry), '../gh-scripts/write-outputs.mjs');
+  return execute('bash', ['-e', '-o', 'pipefail', '-c',
+    '"$TFMAN_NODE" "$TFMAN_CLI" "$@" | "$TFMAN_NODE" "$TFMAN_ADAPTER" "$TFMAN_OUTPUT_KIND"',
+    'tfman-test', ...args], {
+    ...options,
+    env: {
+      ...process.env, ...options.env,
+      TFMAN_NODE: process.execPath, TFMAN_CLI: entry, TFMAN_ADAPTER: adapter,
+      TFMAN_OUTPUT_KIND: args[0] === 'operate-command' ? 'command' : 'matrix',
+      GITHUB_OUTPUT: githubOutput,
+    },
+  });
+}
+
 function runCli(args, options = {}) {
-  return execute(process.execPath, [cli, ...args], { cwd: repoRoot, timeout: 30_000, ...options });
+  return invokeWithOutputs(cli, args, { cwd: repoRoot, timeout: 30_000, ...options });
 }
 
 async function writeShim(dir, script, shebang = '#!/usr/bin/env bash') {
@@ -118,8 +136,7 @@ esac
     const { stdout } = await runCli([
       'operate-command', '--comment-body', '$terraform apply',
       '--base-sha', 'HEAD', '--head-sha', 'HEAD', '--roles', '[]', '--actor', 'someone',
-      '--github-output', output,
-    ]);
+    ], { githubOutput: output });
     const result = JSON.parse(stdout);
     assert.equal(result.command, 'apply');
     assert.equal(result.done, true);
@@ -136,10 +153,9 @@ esac
     await assert.rejects(runCli([
       'operate-command', '--comment-body', '$terraform apply',
       '--base-sha', 'HEAD', '--head-sha', 'HEAD', '--roles', '[]', '--actor', 'someone',
-      '--github-output', join(dir, 'missing/github-output'),
-    ]), error => {
+    ], { githubOutput: join(dir, 'missing/github-output') }), error => {
       assert.equal(error.code, 1);
-      assert.match(error.stderr, /^❌/);
+      assert.match(error.stderr, /ENOENT/);
       assert.doesNotMatch(error.stderr, /\n\s+at /);
       return true;
     });
@@ -187,8 +203,8 @@ esac
     const output = join(dir, 'github-output');
     const { stdout } = await runCli([
       'operate-command', '--comment-body', '$terraform help',
-      '--base-sha', 'unused-base', '--head-sha', 'unused-head', '--github-output', output,
-    ]);
+      '--base-sha', 'unused-base', '--head-sha', 'unused-head',
+    ], { githubOutput: output });
     const result = JSON.parse(stdout);
     assert.equal(result.command, 'help');
     assert.equal(result.done, true);
@@ -215,4 +231,76 @@ esac
     assert.match(await readFile(summary, 'utf8'), /No changes\./);
     assert.match(await readFile(output, 'utf8'), /artifact_name=plan-env-test-/);
   });
+});
+
+describe('CLI with separately located code and workspace', () => {
+  async function fixture(t) {
+    const dir = await mkdtemp(join(tmpdir(), 'tfman separate '));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+    const code = join(dir, 'action');
+    const workspace = join(dir, 'consumer');
+    await cp(fileURLToPath(new URL('../../', import.meta.url)), code, {
+      recursive: true, filter: source => !source.endsWith('/tests'),
+    });
+    await mkdir(workspace);
+    const roots = [{ path: 'env/customer', providers: ['example/provider'] }];
+    await writeFile(join(workspace, '.tfdeps.json'), JSON.stringify({ dirs: roots }));
+    const run = (args, options = {}) => invokeWithOutputs(join(code, 'cli/index.mjs'), args, {
+      cwd: dir, timeout: 30_000, ...options,
+    });
+    return { dir, workspace, roots, run };
+  }
+
+  it('selects consumer roots and preserves stdout, file and GitHub output contracts', async t => {
+    const { dir, workspace, roots, run } = await fixture(t);
+    const args = ['select-targets', '--root', workspace, '--targets', 'env/customer'];
+    const githubOutput = join(dir, 'step-output');
+    const { stdout } = await run(args, { githubOutput });
+    assert.deepEqual(JSON.parse(stdout), roots);
+    assert.equal(await readFile(githubOutput, 'utf8'),
+      'matrix=' + JSON.stringify({ include: roots }) + '\nhas-changes=true\n');
+    const saved = await run([...args, '--output', 'matrix.json']);
+    assert.equal(saved.stdout, '');
+    assert.deepEqual(JSON.parse(await readFile(join(dir, 'matrix.json'), 'utf8')), { include: roots });
+    await assert.rejects(run([...args, '--root', 'missing']), /File not found/);
+    await assert.rejects(run([...args, '--root', '']), /root requires a non-empty path/);
+    const failedOutput = join(dir, 'failed-output');
+    await assert.rejects(run([...args, '--targets', 'env/unknown'], { githubOutput: failedOutput }), /not found/);
+    await assert.rejects(readFile(failedOutput), { code: 'ENOENT' });
+    await assert.rejects(run(args, { githubOutput: join(dir, 'missing/output') }));
+  });
+
+  it('uses the explicit Git workspace and emits an empty matrix without fallback', async t => {
+    const { dir, run } = await fixture(t);
+    const githubOutput = join(dir, 'step-output');
+    const { stdout } = await run([
+      'detect-changes', '--root', repoRoot, '--base', 'HEAD', '--head', 'HEAD',
+    ], { githubOutput });
+    assert.deepEqual(JSON.parse(stdout), []);
+    assert.equal(await readFile(githubOutput, 'utf8'), 'matrix={"include":[]}\nhas-changes=false\n');
+    await assert.rejects(run([
+      'detect-changes', '--root', repoRoot, '--base', 'missing-tfman-ref', '--head', 'HEAD',
+    ]), /Error running git diff/);
+  });
+
+  it('forwards the workspace for both comment selection and automatic detection', async t => {
+    const { workspace, roots, run } = await fixture(t);
+    const args = ['operate-command', '--base-sha', 'HEAD', '--head-sha', 'HEAD'];
+    const selected = await run([...args, '--root', workspace, '--comment-body', '$terraform plan env/customer']);
+    assert.deepEqual(JSON.parse(selected.stdout).targetDirs, roots);
+    const detected = await run([...args, '--root', repoRoot, '--comment-body', '$terraform plan']);
+    assert.equal(JSON.parse(detected.stdout).message, 'No Terraform directories matched the criteria.');
+    const denied = await run([
+      ...args, '--root', 'missing', '--comment-body', '$terraform apply', '--roles', '[]',
+    ]);
+    assert.match(JSON.parse(denied.stdout).message, /does not have permission to apply/);
+  });
+});
+
+it('CLI rejects the removed GitHub output flag with migration guidance', () => {
+  const result = spawnSync(process.execPath, [
+    cli, 'select-targets', '--targets', 'env/test', '--github-output', 'unused',
+  ], { encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /gh-scripts\/write-outputs.mjs/);
 });

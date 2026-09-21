@@ -100,6 +100,7 @@ jobs:
           ROLES: ${{ needs.authorize.outputs.roles }}
           ACTOR: ${{ github.event.comment.user.login }}
         run: |
+          set -euo pipefail
           if git cat-file -e "${HEAD_SHA}:.tfdeps.json" 2>/dev/null; then
             git show "${HEAD_SHA}:.tfdeps.json" > .tfdeps.json
           fi
@@ -109,7 +110,7 @@ jobs:
             --head-sha "$HEAD_SHA" \
             --roles "$ROLES" \
             --actor "$ACTOR" \
-            --github-output "$GITHUB_OUTPUT"
+            | node .github/tfman/gh-scripts/write-outputs.mjs command
 
       - name: Post Command Result If Need
         if: steps.set-matrix.outputs.done == 'true'

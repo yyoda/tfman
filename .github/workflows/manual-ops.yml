@@ -78,17 +78,8 @@ jobs:
           TARGETS: ${{ inputs.targets }}
         run: |
           set -euo pipefail
-          # Use the select-targets command to generate the matrix json
-          # Wrap in { include: ... } and minify with jq -c
-          MATRIX=$(node .github/tfman/cli/index.mjs select-targets --targets "$TARGETS" | jq -c '{include: .}')
-
-          # Echo to stdout for logging and set as output
-          echo "$MATRIX"
-          {
-            echo "matrix<<EOF"
-            echo "$MATRIX"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+          node .github/tfman/cli/index.mjs select-targets \
+            --targets "$TARGETS" | node .github/tfman/gh-scripts/write-outputs.mjs matrix
 
   run:
     permissions:

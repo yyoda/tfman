@@ -11,12 +11,12 @@ import { run as runWriteResult } from './commands/write-result.mjs';
 const commands = {
   'detect-changes': {
     run: runDetectChanges,
-    options: ['base', 'head', 'deps-file', 'output'],
+    options: ['base', 'head', 'deps-file', 'output', 'root'],
     printResult: values => !values.output,
   },
   'select-targets': {
     run: runSelectTargets,
-    options: ['targets', 'output'],
+    options: ['targets', 'output', 'root'],
     printResult: values => !values.output,
   },
   'generate-deps': {
@@ -29,7 +29,7 @@ const commands = {
   },
   'operate-command': {
     run: runOperateCommand,
-    options: ['comment-body', 'base-sha', 'head-sha', 'roles', 'actor', 'github-output'],
+    options: ['comment-body', 'base-sha', 'head-sha', 'roles', 'actor', 'root'],
     printResult: () => true,
   },
 };
@@ -54,6 +54,9 @@ async function main() {
       options: Object.fromEntries(definition.options.map(name => [name, { type: 'string' }])),
       strict: false,
     });
+    if (Object.hasOwn(values, 'github-output')) {
+      throw new Error('--github-output has moved to gh-scripts/write-outputs.mjs; pipe CLI JSON to that script');
+    }
     const result = await definition.run(values);
     if (result && definition.printResult?.(values)) {
       console.log(JSON.stringify(result, null, 2));
