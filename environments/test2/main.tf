@@ -19,3 +19,8 @@ output "result" {
 resource "null_resource"   "broken" {
     triggers   = { name="broken" }
 }
+
+
+resource "null_resource"   "broken" {
+    triggers   = { name="broken" }
+}
