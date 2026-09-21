@@ -191,9 +191,9 @@ GitHub Event (PR open/update, comment, schedule, manual dispatch)
 - Terraform CLI
 - GitHub repository with Actions enabled
 
-### 2. Copy the `.github/` directory
+### 2. Copy the tfman scripts and workflows
 
-Copy the entire `.github/` directory from this repository into your own. This includes all workflow files, scripts, and actions.
+Copy `.github/tfman/` (excluding `.github/tfman/tests/`, which is maintainer-only and never ships) and the workflow files listed in `deploy-tfman`'s `SKILL.md` (`WORKFLOW_FILES`) from this repository into your own. If you have access to a tfman checkout and an agent runtime that supports skills, the bundled `deploy-tfman` skill does this for you — see [Quick start with an AI agent](#quick-start-with-an-ai-agent).
 
 ### 3. Create your Terraform environments
 
@@ -314,7 +314,7 @@ node .github/tfman/cli/index.mjs <command> [options]
 | `operate-command --comment-body "..." --base-sha ... --head-sha ...` | Parse a PR comment command |
 | `write-result --path <root> --command <plan\|apply> --outcome <outcome>` | Write result metadata and the Job Summary |
 
-For full option details, see [`.github/workflows/README.md`](.github/workflows/README.md).
+For full option details, see [`.github/workflows/README.md`](.github/workflows/README.md). For maintainer-only tooling (linting the workflows themselves, running the test suite, the e2e test driver), see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ---
 
