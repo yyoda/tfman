@@ -93,7 +93,9 @@ for f in "${WORKFLOW_FILES[@]}"; do
 done
 ```
 
-> **Maintenance:** `WORKFLOW_FILES` is the complete, hardcoded list of what gets distributed — not "everything under `.github/workflows/`". If tfman gains a new workflow meant for consumer repos, add its filename here explicitly; otherwise it is silently skipped. See `.github/workflows/README.md`'s top-of-section note for the reverse pointer.
+> **Maintenance:** `WORKFLOW_FILES` is the complete, hardcoded list of what gets distributed — not "everything under `.github/workflows/`". If tfman gains a new workflow meant for consumer repos, add its filename here explicitly; otherwise it is silently skipped. See `CONTRIBUTING.md` for the reverse pointer (what's maintainer-only and never ships).
+>
+> Because `README.md` is itself distributed, keep it strictly consumer-facing — it must document only workflows in `WORKFLOW_FILES` and files/directories that actually ship (i.e. not `.github/tfman/tests/`, not maintainer-only workflows like `LintWorkflows`, not repo-root dev tooling like `scripts/` or `environments/`). Anything maintainer-only belongs in `CONTRIBUTING.md` instead.
 
 ### Step 7 — Check for changes
 
