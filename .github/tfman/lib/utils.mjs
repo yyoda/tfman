@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { readFile, access, appendFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { constants } from 'node:fs';
 
 /** Checks if a file or directory exists. */
@@ -75,7 +76,12 @@ export function runCommand(command, args = [], options = {}) {
   });
 }
 
-export async function getWorkspaceRoot() {
+// Explicit roots are caller-owned workspaces, never relative to tfman's code.
+export async function getWorkspaceRoot(root) {
+  if (root !== undefined) {
+    if (typeof root !== 'string' || !root.trim()) throw new Error('--root requires a non-empty path');
+    return resolve(root);
+  }
   const { stdout } = await runCommand('git', ['rev-parse', '--show-toplevel']);
   return stdout;
 }

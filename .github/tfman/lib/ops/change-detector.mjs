@@ -71,12 +71,12 @@ export function calculateExecutionPaths(changedFiles, depsData) {
   }));
 }
 
-export async function detectChanges(base, head, dependencyGraph = null) {
+export async function detectChanges(base, head, dependencyGraph = null, workspaceRoot) {
   if (!base || !head) {
     throw new Error('Missing required arguments: base, head');
   }
 
-  const root = await getWorkspaceRoot();
+  const root = await getWorkspaceRoot(workspaceRoot);
   const changedFiles = await runGitDiff(base, head, root);
 
   const depsData = dependencyGraph || (await loadJson(join(root, '.tfdeps.json')));

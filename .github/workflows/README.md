@@ -109,13 +109,14 @@ The following command is executed in the some channel. If you add a new workflow
 
 ## GitHub Scripts (gh-scripts)
 
-`.github/tfman/gh-scripts` contains scripts designed to be executed via `actions/github-script` within GitHub Actions workflows.
+`.github/tfman/gh-scripts` contains GitHub integration adapters, executed via `actions/github-script` or directly with Node.js within GitHub Actions workflows.
 
 ### Features
-- **Actions Runtime Dependency**: Utilizes objects provided by the Actions runtime such as `github` (Octokit), `context`, and `core`.
+- **Actions Runtime Integration**: Uses runtime objects such as `github` (Octokit), `context`, and `core`, or environment files such as `GITHUB_OUTPUT`, depending on the adapter.
 - **Logic Separation**: Separates complex logic (e.g., PR comment formatting, artifact aggregation) from YAML files into JavaScript modules to keep workflows clean.
 
 ### Scripts
+- `gh-scripts/write-outputs.mjs`: Reads CLI JSON from stdin, converts it into workflow step outputs, and appends them to the required `GITHUB_OUTPUT` file. It also prints the input JSON to stdout for workflow logs. Use `matrix` mode for `detect-changes` / `select-targets`, and `command` mode for `operate-command`.
 - `gh-scripts/post-comment.mjs`: Utility script for posting comments to Pull Requests. It handles formatting of `terraform plan` and `terraform apply` results, and aggregating reports from multiple matrix jobs. The full output is posted inline when it fits the comment size budget. Oversized output falls back to only the summary table with a link to the workflow run summary. The table itself is trimmed with an omission row only if it still exceeds the limit. Comments always stay within the size limit. Each run job's **Job Summary** (`$GITHUB_STEP_SUMMARY`) contains plan/apply output truncated at approximately 900 KB per root to respect GitHub's Job Summary limit. Complete `plan.txt` / `apply.txt` files are included in the run artifacts, which are retained for 1 day.
 
 ## GitHub Scripts CLI
@@ -140,6 +141,51 @@ The CLI is invoked via the `index.mjs` entry point.
 
 ```bash
 node .github/tfman/cli/index.mjs <command> [options]
+```
+
+### Workspace and workflow outputs
+
+The code directory and target repository are independent. `detect-changes`,
+`select-targets`, and `operate-command` accept `--root <workspace>`.
+When omitted, they discover the Git root from the current working directory,
+preserving existing usage. An explicit root is resolved from the current working
+directory and used as the workspace root without falling back to another repository.
+The dependency graph is read from `<workspace>/.tfdeps.json`; Git change detection
+runs in that workspace. Explicit `--deps-file` and `--output`
+paths remain relative to the current working directory, not the code directory or
+`--root`. `generate-deps --root` retains its existing behavior.
+`write-result` continues to operate in the current Terraform root.
+
+`detect-changes` and `select-targets` print a bare array unless `--output` is
+provided, which writes a matrix file and suppresses stdout. To publish workflow
+outputs, pipe stdout to `gh-scripts/write-outputs.mjs matrix`. The adapter appends:
+
+- `matrix`: compact JSON in the form `{"include":[...]}`.
+- `has-changes`: `true` when at least one root was selected, otherwise `false`.
+
+An empty selection emits `{"include":[]}` and `has-changes=false`; callers should
+skip matrix jobs when false. `operate-command` JSON can instead be piped to
+`gh-scripts/write-outputs.mjs command`, which appends `command`, `done` as
+`true`/`false`, `message`, `tf_targets_json`, and `matrix` as `{"include":[…]}` or
+an empty string.
+
+The adapter requires `GITHUB_OUTPUT`; missing output configuration, invalid JSON,
+or output-write failures exit non-zero. Use Bash with `pipefail` so a CLI failure
+also fails the step. These three CLI commands do not write GitHub outputs directly;
+`write-result` retains its existing summary and output behavior.
+
+The former `operate-command --github-output <file>` option is removed.
+Update scripts and workflows together when copying a release; custom callers
+must pipe command JSON to `gh-scripts/write-outputs.mjs command` instead.
+
+For example, code installed outside the consumer repository can be called with
+this Bash step (`GITHUB_OUTPUT` is provided by GitHub Actions):
+
+```bash
+set -o pipefail
+node /opt/tfman/cli/index.mjs detect-changes \
+  --root /work/infra --base <sha> --head <sha> | \
+  node /opt/tfman/gh-scripts/write-outputs.mjs matrix
 ```
 
 ### Commands
@@ -173,7 +219,7 @@ node .github/tfman/cli/index.mjs detect-changes --base <sha> --head <sha> [--dep
 - `--base`: Base commit SHA.
 - `--head`: Head commit SHA.
 - `--deps-file`: Path to the dependency graph file (Default: `.tfdeps.json` in the workspace root). If a path is given explicitly and is empty or cannot be read, the command exits with an error instead of falling back to the default.
-- `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints the bare array (`[{ "path": ..., "providers": [...] }, ...]`) to stdout without the `include` wrapper, so callers that pipe stdout into a matrix must wrap it themselves (the workflows do this with `jq '{include: .}'`). Any failure exits non-zero with the error on stderr.
+- `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints the bare array (`[{ "path": ..., "providers": [...] }, ...]`) to stdout without the `include` wrapper, so callers must wrap it in `include` or pipe it to `gh-scripts/write-outputs.mjs matrix` for workflow outputs. Any failure exits non-zero with the error on stderr.
 
 #### 3. `select-targets`
 
@@ -185,7 +231,7 @@ node .github/tfman/cli/index.mjs select-targets --targets "dir1 dir2" [--output 
 ```
 
 - `--targets`: Space-separated list of target directories.
-- `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints the bare array (`[{ "path": ..., "providers": [...] }, ...]`) to stdout without the `include` wrapper, so callers that pipe stdout into a matrix must wrap it themselves (the workflows do this with `jq '{include: .}'`). Any failure exits non-zero with the error on stderr.
+- `--output`: If provided, writes `{ "include": [...] }` JSON to the given path. If omitted, prints the bare array (`[{ "path": ..., "providers": [...] }, ...]`) to stdout without the `include` wrapper, so callers must wrap it in `include` or pipe it to `gh-scripts/write-outputs.mjs matrix` for workflow outputs. Any failure exits non-zero with the error on stderr.
 
 #### 4. `operate-command`
 
@@ -201,7 +247,6 @@ node .github/tfman/cli/index.mjs operate-command \
 
 - `--roles`: Optional JSON array of roles. `apply` requires the string `"applier"`; invalid JSON or a non-array is treated as no roles. Omitting this option preserves behavior without a role gate. `plan` is unaffected.
 - `--actor`: Optional login used in the permission-denied message.
-- `--github-output`: Appends the JSON fields (`command`, `done` as `true`/`false`, `message`, `tf_targets_json`, and `matrix` as `{"include":[…]}` or empty string) as step outputs to the given file.
 
 **Output contract:** the command always prints a single JSON object to stdout and exits 0, even when the comment is invalid or no targets match — the workflow reads `done` and `message` to decide whether to post a reply instead of relying on the exit code:
 

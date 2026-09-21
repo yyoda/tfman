@@ -39,12 +39,12 @@ export function resolveTargets(targets, depsData) {
 import { join } from 'node:path';
 import { getWorkspaceRoot, loadJson, assertSafeRootPath } from '../utils.mjs';
 
-export async function selectTargets(targetsInput) {
+export async function selectTargets(targetsInput, workspaceRoot) {
   if (!targetsInput) {
     throw new Error('Missing required argument: targets');
   }
 
-  const root = await getWorkspaceRoot();
+  const root = await getWorkspaceRoot(workspaceRoot);
   const targets = targetsInput.split(/\s+/).filter(Boolean);
   const depsFile = join(root, '.tfdeps.json');
   const depsData = await loadJson(depsFile);

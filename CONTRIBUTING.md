@@ -37,3 +37,25 @@ The e2e script uses the developer's local `gh` authentication because PRs and co
 Options: `--base <branch>` (default `main`), `--keep` (retain the PR and remote branch), `--skip-apply` (skip authorized apply), `--timeout <seconds>` (per wait, default `900`), and `-h`/`--help`. The opt-in `--toggle-appliers` tests unauthorized apply by temporarily changing the repository's `APPLIERS` variable to `[]`; the original value is restored after the scenario and by an exit trap on failure. This option requires access to read and write that variable.
 
 None of `scripts/e2e-prcomment.sh`, `environments/`, or `.github/tfman/tests/` ship to consumer repos.
+
+## Distribution boundaries
+
+Keep the current copy-based distribution. Workflow YAML owns events, permissions,
+job dependencies and third-party actions. Libraries own target selection and pure
+output formatting; CLI entry points handle arguments and standard/file output.
+GitHub integration adapters belong in `gh-scripts/`.
+
+For `detect-changes`, `select-targets`, and `operate-command`, the CLI emits JSON
+and `gh-scripts/write-outputs.mjs` reads that JSON from stdin and writes workflow
+outputs to `GITHUB_OUTPUT`. Matrix construction is shared library logic; the adapter
+owns the environment-file side effect. Workflows use Bash `pipefail` to preserve
+CLI failures across the pipe. `write-result` retains its existing GitHub Summary
+and output handling; this boundary change does not migrate every existing side effect.
+
+Target-selection operations accept an explicit workspace independently of where
+tfman is installed, without changing the process working directory.
+
+Preserve existing CLI stdout, file output and error contracts when adding entry
+points. Separate-placement CLI tests exercise code outside the consumer workspace.
+A future public Action can wrap these interfaces; no Action metadata or reusable
+workflow is required for the current distribution.

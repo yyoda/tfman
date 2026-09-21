@@ -1,30 +1,14 @@
 import { detectChanges } from '../../lib/ops/change-detector.mjs';
 import { selectTargets } from '../../lib/ops/target-selector.mjs';
 import { parseCommand } from '../../lib/ops/command-parser.mjs';
-import { appendGithubOutput, requireArgs } from '../../lib/utils.mjs';
-
-export async function run(args, dependencies = {}) {
-  const result = await operate(args, dependencies);
-  if (args['github-output']) {
-    const matrix = !result.done && result.targetDirs.length > 0
-      ? JSON.stringify({ include: result.targetDirs }) : '';
-    await appendGithubOutput({
-      tf_targets_json: JSON.stringify(result.tfTargets),
-      matrix,
-      command: result.command,
-      done: String(result.done),
-      message: result.message,
-    }, args['github-output']);
-  }
-  return result;
-}
+import { requireArgs } from '../../lib/utils.mjs';
 
 // Completed commands never schedule roots or pass resource targets downstream.
 function completedResult(message, command = 'error') {
   return { command, targetDirs: [], tfTargets: [], message, done: true };
 }
 
-async function operate(args, dependencies) {
+export async function run(args, dependencies = {}) {
   const {
     _detectChanges = detectChanges,
     _selectTargets = selectTargets,
@@ -67,9 +51,9 @@ async function operate(args, dependencies) {
 
   try {
     if (parsedTargetDirs.length > 0) {
-      targetDirs = await _selectTargets(parsedTargetDirs.join(' '));
+      targetDirs = await _selectTargets(parsedTargetDirs.join(' '), args.root);
     } else {
-      targetDirs = await _detectChanges(baseSha, headSha);
+      targetDirs = await _detectChanges(baseSha, headSha, null, args.root);
     }
 
     if (targetDirs.length === 0) {

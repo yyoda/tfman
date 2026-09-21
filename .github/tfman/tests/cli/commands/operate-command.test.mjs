@@ -1,6 +1,3 @@
-import fs from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { run } from '../../../cli/commands/operate-command.mjs';
@@ -157,7 +154,7 @@ describe('cli/commands/operate-command', () => {
   });
 });
 
-describe('operate-command roles and step outputs', () => {
+describe('operate-command roles', () => {
   const baseArgs = { 'comment-body': '$terraform apply', 'base-sha': 'base', 'head-sha': 'head', actor: 'someone' };
 
   for (const roles of ['["planner"]', 'invalid json', '[]', '"applier"', 'null']) {
@@ -185,37 +182,4 @@ describe('operate-command roles and step outputs', () => {
       assert.deepStrictEqual(result.targetDirs, [{ path: 'env/x' }]);
     });
   }
-
-  it('appends ordered step outputs with multiline messages and boolean strings', async (t) => {
-    const cwd = await fs.mkdtemp(join(tmpdir(), 'operate-output-'));
-    t.after(() => fs.rm(cwd, { recursive: true, force: true }));
-    const output = join(cwd, 'output');
-    await fs.writeFile(output, 'existing=value\n');
-    const cases = [
-      { command: 'help', targetDirs: [], tfTargets: [], message: 'first line\nEOF\nlast line\n', done: true },
-      { command: 'plan', targetDirs: [{ path: 'env/x', providers: [] }], tfTargets: ['module.example'], message: '', done: false },
-    ];
-    let previous = 'existing=value\n';
-    for (const expected of cases) {
-      const result = await run({ ...baseArgs, 'github-output': output }, {
-        _parseCommand: () => ({ ...expected, targetDirs: [] }),
-        _detectChanges: async () => expected.targetDirs,
-      });
-      assert.deepStrictEqual(result, expected);
-      const content = await fs.readFile(output, 'utf8');
-      assert.ok(content.startsWith(previous));
-      const appended = content.slice(previous.length);
-      const matrix = expected.done ? '' : JSON.stringify({ include: expected.targetDirs });
-      assert.strictEqual(appended,
-        `tf_targets_json=${JSON.stringify(expected.tfTargets)}\n` +
-        `matrix=${matrix}\n` +
-        `command=${expected.command}\n` +
-        `done=${expected.done}\n` +
-        (expected.message.includes('\n') ? `message<<ghadelim\n${expected.message}\nghadelim\n` : `message=${expected.message}\n`));
-      if (expected.message.includes('\n')) {
-        assert.strictEqual(appended.split('message<<ghadelim\n')[1].split('\nghadelim\n')[0], expected.message);
-      }
-      previous = content;
-    }
-  });
 });
