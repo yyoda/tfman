@@ -1,6 +1,83 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { PlanCommentBuilder, ApplyCommentBuilder } from '../../lib/comment-builder.mjs';
+import { PlanCommentBuilder, ApplyCommentBuilder, COMMENT_NOISE_PATTERNS, DEFAULT_MAX_COMMENT_LENGTH } from '../../lib/comment-builder.mjs';
+
+describe('comment noise filtering', () => {
+  it('exports an array of regular expressions', () => {
+    assert.ok(Array.isArray(COMMENT_NOISE_PATTERNS));
+    assert.strictEqual(COMMENT_NOISE_PATTERNS.length, 3);
+    assert.ok(COMMENT_NOISE_PATTERNS.every(pattern => pattern instanceof RegExp));
+  });
+
+  it('keeps large apply logs inline after removing refresh noise', () => {
+    const builder = new ApplyCommentBuilder();
+    const noise = Array.from({ length: 900 }, (_, i) =>
+      `aws_iam_role.role_${String(i).padStart(3, '0')}: Refreshing state... [id=${'role-'.repeat(10)}${i}]`).join('\n');
+    const diff = '  ~ resource "aws_iam_role" "role_000" {\n      ~ description = "old" -> "new"\n    }';
+    const complete = 'Apply complete! Resources: 0 added, 1 changed, 0 destroyed.';
+    const output = `${noise}\n${diff}\n${complete}`;
+    assert.ok(output.length > DEFAULT_MAX_COMMENT_LENGTH);
+    builder.addResult('env/roles', output, 'success');
+    const comment = builder.buildComment();
+    assert.ok(comment.includes('Show Output Details'));
+    assert.ok(!comment.includes('Inline details were omitted'));
+    assert.ok(comment.length <= DEFAULT_MAX_COMMENT_LENGTH);
+    assert.ok(comment.split('\n').every(line => !COMMENT_NOISE_PATTERNS.some(pattern => pattern.test(line))));
+    assert.ok(comment.includes(diff));
+    assert.ok(comment.includes(complete));
+    assert.ok(comment.includes('| `env/roles` | ✅ | ~1 |'));
+  });
+
+  it('keeps errors inline in large failed raw plan logs', () => {
+    const builder = new PlanCommentBuilder();
+    const noise = Array.from({ length: 600 }, (_, i) => [
+      `aws_iam_role.role_${i}: Refreshing state... [id=role_${i}]`,
+      `data.aws_iam_role.role_${i}: Reading...`,
+      `data.aws_iam_role.role_${i}: Read complete after 0s [id=role_${i}]`,
+    ].join('\n')).join('\n');
+    const error = 'Error: Unable to read role\n\n  with data.aws_iam_role.role_000,\n  on main.tf line 1:\nThe requested role was not found.';
+    const output = `${noise}\n${error}`;
+    assert.ok(output.length > DEFAULT_MAX_COMMENT_LENGTH);
+    builder.addResult('env/roles', output, 'failure');
+    const comment = builder.buildComment();
+    assert.ok(comment.includes('Show Detailed Plans'));
+    assert.ok(!comment.includes('Inline details were omitted'));
+    assert.ok(comment.length <= DEFAULT_MAX_COMMENT_LENGTH);
+    assert.ok(comment.includes(error));
+    assert.ok(comment.includes('| `env/roles` | ❌ | Plan Failed |'));
+    assert.ok(comment.split('\n').every(line => !COMMENT_NOISE_PATTERNS.some(pattern => pattern.test(line))));
+  });
+
+  it('preserves noise-free terraform show content verbatim including double blank lines', () => {
+    const builder = new PlanCommentBuilder();
+    const output = 'Terraform will perform the following actions:\n\n\n  ~ resource "aws_iam_role" "role_000" {\n      ~ description = "old" -> "new"\n    }\n\nPlan: 0 to add, 1 to change, 0 to destroy.\nChanges to Outputs:\n  + role = "role_000"\n';
+    builder.addResult('env/roles', output);
+    assert.ok(builder.buildComment().includes(`\`\`\`hcl\n${output}\n\`\`\``));
+  });
+
+  it('preserves similar lines and diff attributes even when noise is removed', () => {
+    const builder = new ApplyCommentBuilder();
+    const retained = [
+      '      + description = "x: Reading..."',
+      '  ~ resource "aws_x" "y" {',
+      '      - description = "x: Refreshing state..."',
+      'Reading...',
+      '  aws_x.y: Reading...',
+      'No changes.',
+      'Changes to Outputs:',
+      'Plan: 0 to add, 1 to change, 0 to destroy.',
+    ].join('\n');
+    builder.addResult('env/roles', `aws_x.y: Reading...\n${retained}`, 'success');
+    assert.ok(builder.buildComment().includes(`\`\`\`text\n${retained}\n\`\`\``));
+  });
+
+  it('collapses blank lines left behind by noise lines', () => {
+    const builder = new ApplyCommentBuilder();
+    const output = 'Before\n\naws_x.y: Refreshing state...\n\naws_x.y: Reading...\n\naws_x.y: Read complete after 1s\n\nAfter';
+    builder.addResult('env/roles', output, 'success');
+    assert.ok(builder.buildComment().includes('```text\nBefore\n\nAfter\n```'));
+  });
+});
 
 describe('ApplyCommentBuilder', () => {
 
