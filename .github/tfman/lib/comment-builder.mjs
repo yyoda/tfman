@@ -2,6 +2,26 @@
 // GitHub's hard limit is 65536 characters; we stay well under it for safety.
 export const DEFAULT_MAX_COMMENT_LENGTH = 60000;
 
+// Single place to tune filtered detail lines; adding/removing a pattern needs no other change.
+export const COMMENT_NOISE_PATTERNS = [
+  /^\S.*: Refreshing state\.\.\.( \[id=.*\])?$/,
+  /^\S.*: Reading\.\.\.$/,
+  /^\S.*: Read complete after \S+( \[id=.*\])?$/,
+];
+
+/**
+ * Remove comment noise and collapse blank lines only when noise was removed.
+ * @param {string} content
+ * @returns {string}
+ */
+function stripNoiseLines(content) {
+  const lines = content.split('\n');
+  const filtered = lines.filter(line => !COMMENT_NOISE_PATTERNS.some(pattern => pattern.test(line)));
+  if (filtered.length === lines.length) return content;
+  return filtered.filter((line, index) =>
+    line.trim() !== '' || index === 0 || filtered[index - 1].trim() !== '').join('\n');
+}
+
 /**
  * Build a single fenced detail block with the full output for one path.
  * @param {string} tfPath
@@ -13,7 +33,7 @@ function buildDetailBlock(tfPath, content, fence) {
   const header = `### 📂 \`${tfPath}\`\n\n\`\`\`${fence}\n`;
   const footer = `\n\`\`\`\n\n`;
   // Sanitize to avoid breaking the surrounding markdown code fence.
-  const body = content.replace(/```/g, "'''");
+  const body = stripNoiseLines(content).replace(/```/g, "'''");
   return `${header}${body}${footer}`;
 }
 
