@@ -41,6 +41,7 @@ describe('post-comment.mjs', () => {
     const github = {
         paginate: mock.fn(async (fn, params) => (await fn(params)).data),
         rest: {
+            pulls: { get: mock.fn() },
             issues: {
                 listComments: mock.fn(),
                 deleteComment: mock.fn(),
@@ -60,6 +61,8 @@ describe('post-comment.mjs', () => {
         core.info.mock.resetCalls();
         core.warning.mock.resetCalls();
         core.error.mock.resetCalls();
+        core.setFailed.mock.resetCalls();
+        github.rest.pulls.get.mock.resetCalls();
         glob.create.mock.resetCalls();
         github.paginate.mock.resetCalls();
         
@@ -321,6 +324,120 @@ describe('post-comment.mjs', () => {
             assert.ok(body.includes(hasArtifact ? '| `env/a` | ✅ | No changes |' : '| `env/a` | ❌ | Plan Failed |'));
             assert.ok(body.includes('(No result artifact was produced for this path — the job may have been cancelled or failed before uploading)'));
             assert.ok(!body.includes('No plan results were produced for this run.'));
+        });
+    }
+
+    const headSha = 'a'.repeat(40);
+    const provenance = { headSha, mergeCommit: 'b'.repeat(40), runAttempt: '2' };
+    const runContext = { ...context, runId: 99 };
+
+    function setupProvenancePath(route) {
+        glob.create.mock.mockImplementation(async () => globberMock);
+        globberMock.glob.mock.mockImplementation(async () => route === 'normal' ? ['plans/a/info.json'] : []);
+        fs.existsSync.mock.mockImplementation(() => true);
+        fs.readFileSync.mock.mockImplementation(filepath => filepath.endsWith('info.json')
+            ? JSON.stringify({ path: 'env/a' })
+            : 'Plan: 1 to add, 0 to change, 0 to destroy.');
+        github.rest.issues.listComments.mock.mockImplementation(async () => ({ data: [
+            { id: 42, user: { type: 'Bot' }, body: PlanCommentBuilder.COMMENT_HEADER },
+        ] }));
+        github.rest.issues.createComment.mock.mockImplementation(async () => {});
+        return { mode: 'plan', provenance, cleanupOnly: route === 'cleanup', deletePreviousComments: true };
+    }
+
+    for (const route of ['normal', 'cleanup', 'no-results']) {
+        for (const freshness of ['matching', 'mismatching', 'unverifiable']) {
+            it(`${freshness} provenance guards the ${route} path`, async () => {
+                const options = setupProvenancePath(route);
+                const events = [];
+                github.rest.pulls.get.mock.mockImplementation(async params => {
+                    assert.deepEqual(params, { owner: context.repo.owner, repo: context.repo.repo, pull_number: context.issue.number });
+                    if (route === 'normal') assert.equal(fs.readFileSync.mock.callCount(), 2);
+                    assert.equal(github.paginate.mock.callCount(), 0);
+                    events.push('guard');
+                    if (freshness === 'unverifiable') throw new Error('lookup unavailable');
+                    return { data: { head: { sha: freshness === 'matching' ? headSha : 'c'.repeat(40) } } };
+                });
+                github.rest.issues.deleteComment.mock.mockImplementation(async () => events.push('delete'));
+                github.rest.issues.createComment.mock.mockImplementation(async () => events.push('post'));
+                await postComment({ github, context: runContext, core, glob }, options, { fs, path });
+                assert.equal(core.setFailed.mock.callCount(), freshness === 'unverifiable' ? 1 : 0);
+                if (freshness === 'matching') {
+                    assert.deepEqual(events, route === 'cleanup' ? ['guard', 'delete'] : ['guard', 'delete', 'post']);
+                    if (route !== 'cleanup') {
+                        const body = github.rest.issues.createComment.mock.calls[0].arguments[0].body;
+                        assert.equal(body.split('\n')[1], `> tfman-plan-provenance: pr_head=${headSha} merge_commit=${provenance.mergeCommit} run=https://github.com/test-owner/test-repo/actions/runs/99/attempts/2`);
+                        if (route === 'no-results') assert.ok(body.includes('No plan results were produced'));
+                    }
+                } else {
+                    assert.deepEqual(events, ['guard']);
+                    assert.equal(github.paginate.mock.callCount(), 0);
+                    assert.equal(github.rest.issues.deleteComment.mock.callCount(), 0);
+                    assert.equal(github.rest.issues.createComment.mock.callCount(), 0);
+                    if (freshness === 'unverifiable') {
+                        assert.equal(core.warning.mock.callCount(), 0);
+                        const message = core.setFailed.mock.calls[0].arguments[0];
+                        assert.match(message, /lookup unavailable/);
+                        assert.match(message, /re-run this post job/);
+                        if (route === 'cleanup') assert.doesNotMatch(message, /\$terraform plan/);
+                        else assert.match(message, /\$terraform plan/);
+                    } else {
+                        assert.equal(core.warning.mock.callCount(), 1);
+                        assert.match(core.warning.mock.calls[0].arguments[0], /Skipped stale/);
+                    }
+                }
+            });
+        }
+    }
+
+    for (const invalid of [{ headSha: 'invalid', runAttempt: '1' }, { headSha: 'A'.repeat(40), runAttempt: '1' }, { headSha, runAttempt: '' }, { headSha }]) {
+        it(`fails closed for invalid provenance ${JSON.stringify(invalid)}`, async () => {
+            await postComment({ github, context, core, glob }, { provenance: invalid, deletePreviousComments: true }, { fs, path });
+            assert.equal(core.setFailed.mock.callCount(), 1);
+            assert.equal(github.rest.pulls.get.mock.callCount(), 0);
+            assert.equal(github.paginate.mock.callCount(), 0);
+            assert.equal(github.rest.issues.deleteComment.mock.callCount(), 0);
+            assert.equal(github.rest.issues.createComment.mock.callCount(), 0);
+        });
+    }
+
+    it('uses none for plans without a merge commit', async () => {
+        const options = setupProvenancePath('no-results');
+        github.rest.pulls.get.mock.mockImplementation(async () => ({ data: { head: { sha: headSha } } }));
+        await postComment({ github, context: runContext, core, glob }, {
+            ...options, provenance: { headSha, runAttempt: '3', mergeCommit: undefined },
+        }, { fs, path });
+        assert.equal(core.setFailed.mock.callCount(), 0);
+        assert.ok(github.rest.issues.createComment.mock.calls[0].arguments[0].body.includes('merge_commit=none'));
+    });
+
+    for (const [label, invalid] of [
+        ['zero attempt', { ...provenance, runAttempt: '0' }],
+        ['non-numeric attempt', { ...provenance, runAttempt: 'abc' }],
+        ['oversized attempt', { ...provenance, runAttempt: '1'.repeat(60000) }],
+        ['invalid merge commit', { ...provenance, mergeCommit: 'xyz' }],
+    ]) {
+        it(`fails closed for provenance with ${label}`, async () => {
+            await postComment({ github, context, core, glob }, { provenance: invalid, deletePreviousComments: true }, { fs, path });
+            assert.equal(core.setFailed.mock.callCount(), 1);
+            assert.match(core.setFailed.mock.calls[0].arguments[0], /runAttempt.*mergeCommit/);
+            assert.equal(github.rest.pulls.get.mock.callCount(), 0);
+            assert.equal(github.paginate.mock.callCount(), 0);
+            assert.equal(github.rest.issues.deleteComment.mock.callCount(), 0);
+            assert.equal(github.rest.issues.createComment.mock.callCount(), 0);
+        });
+    }
+
+    for (const mode of ['plan', 'apply']) {
+        it(`keeps legacy ${mode} behavior without a freshness lookup`, async () => {
+            setupProvenancePath('no-results');
+            await postComment({ github, context, core, glob }, {
+                mode, ...(mode === 'apply' ? { provenance: { headSha: 'invalid' } } : {}),
+            }, { fs, path });
+            assert.equal(core.setFailed.mock.callCount(), 0);
+            assert.equal(github.rest.pulls.get.mock.callCount(), 0);
+            assert.equal(github.rest.issues.createComment.mock.callCount(), 1);
+            assert.ok(!github.rest.issues.createComment.mock.calls[0].arguments[0].body.includes('tfman-plan-provenance'));
         });
     }
 

@@ -1,6 +1,6 @@
 import * as _fs from 'fs';
 import * as _path from 'path';
-import { PlanCommentBuilder, ApplyCommentBuilder } from '../lib/comment-builder.mjs';
+import { PlanCommentBuilder, ApplyCommentBuilder, formatProvenance } from '../lib/comment-builder.mjs';
 
 /**
  * GitHub Actions script for posting terraform plan/apply comments.
@@ -48,6 +48,35 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
     return;
   }
 
+  const provenance = config.mode === 'plan' ? options.provenance : undefined;
+  if (provenance !== undefined && (!provenance ||
+      !/^[0-9a-f]{40}$/.test(provenance.headSha) ||
+      !/^[1-9]\d{0,9}$/.test(String(provenance.runAttempt)) ||
+      (provenance.mergeCommit && !/^[0-9a-f]{40}$/.test(provenance.mergeCommit)))) {
+    if (core) core.setFailed('Invalid plan provenance: headSha must be 40 lowercase hex characters, runAttempt must be a positive integer of at most 10 digits, and mergeCommit must be absent/falsy or 40 lowercase hex characters.');
+    return;
+  }
+  const stamp = provenance ? formatProvenance({ ...provenance, runUrl }) : undefined;
+  const isFresh = async () => {
+    if (!provenance) return true;
+    try {
+      const { data } = await github.rest.pulls.get({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        pull_number: context.issue.number,
+      });
+      if (data.head.sha === provenance.headSha) return true;
+      if (core) core.warning('Skipped stale plan comments: the PR head no longer matches this run.');
+    } catch (error) {
+      // A cleanup-only run has no targets, so `$terraform plan` would not reach this script again.
+      const recovery = config.cleanupOnly
+        ? 'Recovery: re-run this post job.'
+        : 'Recovery: re-run this post job, or comment `$terraform plan` on the PR.';
+      if (core) core.setFailed(`Could not verify the PR head (${error.message}), so plan comments were left untouched. ${recovery}`);
+    }
+    return false;
+  };
+
   const builder = new behavior.Builder();
   const COMMENT_HEADER = behavior.Builder.COMMENT_HEADER;
 
@@ -79,6 +108,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   };
 
   if (config.cleanupOnly) {
+    if (!await isFresh()) return;
     await cleanupPreviousComments();
     if (core) core.info(`Removed previous ${config.mode} comments (cleanup only).`);
     return;
@@ -89,10 +119,11 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   const infoFiles = await globber.glob();
 
   if (infoFiles.length === 0 && config.expectedPaths.length === 0) {
-    await cleanupPreviousComments();
     if (core) core.info(`No ${config.mode} results found.`);
-    const message = `${COMMENT_HEADER}\n\nNo ${config.mode} results were produced for this run. The ${config.mode} jobs may have failed before producing any output — check the workflow run for details.` +
+    const message = `${COMMENT_HEADER}\n${stamp ? `${stamp}\n` : ''}\nNo ${config.mode} results were produced for this run. The ${config.mode} jobs may have failed before producing any output — check the workflow run for details.` +
       (runUrl ? `\n\n> 📄 [Workflow run](${runUrl})` : '');
+    if (!await isFresh()) return;
+    await cleanupPreviousComments();
     await github.rest.issues.createComment({
         owner: context.repo.owner,
         repo: context.repo.repo,
@@ -102,10 +133,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
     return;
   }
 
-  // 2. Cleanup previous comments (Controlled by flag)
-  await cleanupPreviousComments();
-
-  // 3. Add results to Builder
+  // 2. Add results to Builder
   const resultPaths = new Set();
   for (const infoFile of infoFiles) {
     try {
@@ -131,8 +159,10 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
     }
   }
 
-  // 4. Generate the comment body and post
-  const body = builder.buildComment({ runUrl });
+  // 3. Build before checking freshness, then clean up and post.
+  const body = builder.buildComment({ runUrl, stamp });
+  if (!await isFresh()) return;
+  await cleanupPreviousComments();
 
   try {
     if (body) {

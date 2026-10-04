@@ -96,6 +96,10 @@ function assembleComment({ summaryHeader, summaryRows, details, detailsLabel, li
   return summaryHeader + retained + omissionRow(summaryRows.length - kept) + linkFooter + note;
 }
 
+export function formatProvenance({ headSha, mergeCommit, runUrl, runAttempt }) {
+  return `> tfman-plan-provenance: pr_head=${headSha} merge_commit=${mergeCommit || 'none'} run=${runUrl}/attempts/${runAttempt}`;
+}
+
 export class PlanCommentBuilder {
   static get COMMENT_HEADER() {
     return '## 📋 Terraform Plan Summary';
@@ -126,15 +130,16 @@ export class PlanCommentBuilder {
    * only if needed. See assembleComment for the graded fallback.
    * @param {object} [options]
    * @param {string|null} [options.runUrl] - URL of the workflow run holding the full output
+   * @param {string} [options.stamp] - Provenance line retained in every fallback tier
    * @param {number} [options.maxCommentLength]
    * @returns {string} Comment body ('' when there are no results)
    */
-  buildComment({ runUrl = null, maxCommentLength = DEFAULT_MAX_COMMENT_LENGTH } = {}) {
+  buildComment({ runUrl = null, stamp, maxCommentLength = DEFAULT_MAX_COMMENT_LENGTH } = {}) {
     if (this.results.length === 0) return '';
 
     this.results.sort((a, b) => a.tfPath.localeCompare(b.tfPath));
 
-    const summaryHeader = `${PlanCommentBuilder.COMMENT_HEADER}\n\n| Path | Result | Change Detail |\n| :--- | :---: | :--- |\n`;
+    const summaryHeader = `${PlanCommentBuilder.COMMENT_HEADER}\n${stamp ? `${stamp}\n` : ''}\n| Path | Result | Change Detail |\n| :--- | :---: | :--- |\n`;
     const summaryRows = [];
     const details = [];
 
@@ -150,7 +155,7 @@ export class PlanCommentBuilder {
       ? `\n> 📄 Full plan output is available in the [workflow run summary](${runUrl}).\n`
       : '';
 
-    return assembleComment({
+    const body = assembleComment({
       summaryHeader,
       summaryRows,
       details,
@@ -158,6 +163,10 @@ export class PlanCommentBuilder {
       linkFooter,
       maxCommentLength
     });
+    if (body.length > maxCommentLength) {
+      throw new RangeError('Comment size limit is too small for the plan summary header and omission notice.');
+    }
+    return body;
   }
 
   /**

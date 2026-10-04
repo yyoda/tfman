@@ -218,7 +218,7 @@ jobs:
   post-plan:
     needs: [detect-changes, plan]
     runs-on: ubuntu-latest
-    if: always() && needs.detect-changes.result == 'success'
+    if: ${{ !cancelled() && needs.detect-changes.result == 'success' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -234,10 +234,13 @@ jobs:
         uses: actions/github-script@v8
         env:
           MATRIX: ${{ needs.detect-changes.outputs.matrix }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { default: script } = await import('${{ github.workspace }}/.github/tfman/gh-scripts/post-comment.mjs');
             const hasChanges = '${{ needs.detect-changes.outputs.has-changes }}' === 'true';
             const expectedPaths = process.env.MATRIX ? JSON.parse(process.env.MATRIX).include.map(i => i.path) : [];
-            await script({github, context, core, glob}, { expectedPaths, mode: 'plan', deletePreviousComments: true, cleanupOnly: !hasChanges });
+            await script({github, context, core, glob}, { expectedPaths, mode: 'plan', deletePreviousComments: true, cleanupOnly: !hasChanges, provenance: { headSha: process.env.PR_HEAD_SHA, mergeCommit: process.env.MERGE_SHA, runAttempt: process.env.RUN_ATTEMPT } });
