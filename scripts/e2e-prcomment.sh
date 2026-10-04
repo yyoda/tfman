@@ -229,10 +229,19 @@ plan() {
     assert_stamp "$body" "$sha" none "$run" 1
 }
 cancel_early() {
-    post_command '$terraform plan' || return 1
-    wait_for_run_job_started "$run" || return 1
-    gh run cancel "$run" --repo "$repo" || return 1
-    data=$(wait_for_completion "$run") || return 1
+    local attempt max=3
+    for ((attempt = 1; attempt <= max; attempt++)); do
+        post_command '$terraform plan' || return 1
+        wait_for_run_job_started "$run" || return 1
+        gh run cancel "$run" --repo "$repo" || return 1
+        data=$(wait_for_completion "$run") || return 1
+        # The cancel can land after Terraform Plan already finished; that run produces an artifact and cannot show an early cancellation, so try again.
+        if jq -e '[.jobs[] | select(.name | startswith("run on")) | .steps[]? | select(.name == "Terraform Plan" and .conclusion == "success")] | length == 0' <<< "$data" >/dev/null; then
+            break
+        fi
+        progress "Cancel early: the cancel landed after Terraform Plan finished (attempt $attempt/$max)"
+    done
+    ((attempt <= max)) || { note="The cancel landed after Terraform Plan finished in all $max attempts"; return 1; }
     status_is terraform/plan error cancelled || return 1
     body=$(latest_comment '## 📋') || return 1
     contains "$body" '`environments/test1` | ❌ | Plan Failed' || return 1
