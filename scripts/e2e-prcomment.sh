@@ -303,7 +303,7 @@ rerun_post_job() {
 post_job_rerun() {
     [[ -n $broken_review_run && -n $broken_snapshot ]] || { note='Missing broken review run or snapshot'; return 1; }
     rerun_post_job "$broken_review_run" || return 1
-    local snapshot body old_body old_id end=$((SECONDS + timeout))
+    local snapshot body old_body old_id expected_body attempt_one='/attempts/1' attempt_two='/attempts/2' end=$((SECONDS + timeout))
     old_body=$(jq -r '.[0].body' <<< "$broken_snapshot") || return 1
     old_id=$(jq -r '.[0].id' <<< "$broken_snapshot") || return 1
     while ((SECONDS < end)); do
@@ -312,7 +312,9 @@ post_job_rerun() {
             body=$(jq -r '.[0].body' <<< "$snapshot") || return 1
             if [[ $(stamp_line "$body") == *'/attempts/2'* ]]; then
                 [[ $(jq -r '.[0].id' <<< "$snapshot") != "$old_id" ]] || { note='Rerun did not replace comment id'; return 1; }
-                [[ $body == "${old_body//\/attempts\/1/\/attempts\/2}" ]] || { note='Rerun changed more than the attempt'; return 1; }
+                # Keep pattern and replacement in variables: bash 3.2 (macOS) leaves backslashes in an escaped replacement.
+                expected_body=${old_body//"$attempt_one"/$attempt_two}
+                [[ $body == "$expected_body" ]] || { note='Rerun changed more than the attempt'; return 1; }
                 rerun_snapshot=$snapshot
                 return 0
             fi
