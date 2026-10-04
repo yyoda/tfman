@@ -328,9 +328,15 @@ jobs:
         env:
           MATRIX: ${{ needs.setup.outputs.matrix }}
           COMMAND: ${{ needs.setup.outputs.command }}
+          PR_HEAD_SHA: ${{ needs.setup.outputs.head_sha }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         with:
           script: |
             const command = process.env.COMMAND;
             const expectedPaths = process.env.MATRIX ? JSON.parse(process.env.MATRIX).include.map(i => i.path) : [];
             const { default: script } = await import('${{ github.workspace }}/.github/tfman/gh-scripts/post-comment.mjs');
-            await script({ github, context, core, glob }, { expectedPaths, mode: command, deletePreviousComments: command === 'plan' });
+            const options = { expectedPaths, mode: command, deletePreviousComments: command === 'plan' };
+            if (command === 'plan') {
+              options.provenance = { headSha: process.env.PR_HEAD_SHA, runAttempt: process.env.RUN_ATTEMPT };
+            }
+            await script({ github, context, core, glob }, options);

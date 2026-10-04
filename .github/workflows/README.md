@@ -14,11 +14,11 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - Uses scripts under `.github/tfman/cli` for change detection.
     - Roots whose job fails before `terraform plan` runs (`fmt`, `init`, or `validate`) are listed as ❌ `Plan Failed` with `(Log file not found)` because no plan output exists; only failures inside `terraform plan` itself carry the captured error output, and plans that only change outputs are reported as changes rather than "No changes".
     - Finally, collects all results from artifacts and posts them in a comment. This flow is used to consolidate reports into a single post.
-    - Stale plan comments are removed on every run, including when no results were produced, by scanning all comment pages. A missing plan artifact for an expected root is shown as ❌ `Plan Failed`. Pushes with zero changed Terraform roots also delete old plan comments without posting a new comment.
+    - Previous plan comments are removed on each verified current run, including when no results were produced, by scanning all comment pages. A missing plan artifact for an expected root is shown as ❌ `Plan Failed`. Pushes with zero changed Terraform roots also delete old plan comments without posting a new comment.
 - **STATIC ANALYSIS** (steps appended to the `plan` job; per changed target, same scope as the plan):
     - **tflint** (gate) — installs the pinned `aws` plugin (cached under `~/.tflint.d/plugins`) and lints each changed root against the repo-root `.tflint.hcl`, passed via `--config` because tflint does not walk up to the repo root. Fails the job on findings at **warning severity or above** (hardcoded via `--minimum-failure-severity=warning`; edit that flag to change the threshold). Skipped when `.tflint.hcl` is absent. `.tflint.hcl`'s own `rule { enabled = false }` blocks already suppress `terraform_required_version` / `terraform_required_providers` (versions come from `.terraform-version`/tenv), so no CLI `--disable-rule` flags are needed.
     - **trivy** (informational) — scans each changed root using the repo-root `trivy.yaml`, writes a HIGH/CRITICAL summary to the Job Summary, and uploads the full JSON report as a `trivy-*` artifact. It **never fails the job** (`|| true`, no `--exit-code`) — advisory until the misconfiguration backlog is triaged. Skipped when `trivy.yaml` is absent.
-    - Both run **after** the plan steps and even when `terraform plan` fails (`if: ${{ !cancelled() }}`), so a lint failure never suppresses the plan preview — the plan comment is still posted (post-plan runs `always()`).
+    - Both run **after** the plan steps and even when `terraform plan` fails (`if: ${{ !cancelled() }}`), so a lint failure never suppresses the plan preview — the plan comment is still posted (post-plan runs with `!cancelled()`). Results of a cancelled PRReview run are no longer posted to the PR.
 
 ### ManualOps
 - **PURPOSE**:
@@ -47,7 +47,7 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - Apply requires both the comment author and the person who runs or re-runs the workflow (`github.triggering_actor`) to be listed in `APPLIERS`.
     - **Execution User Restriction**: Users not listed in `APPLIERS` can run `plan` but `apply` is blocked.
     - Command parsing and target resolution run with the tfman scripts from the repository's default branch. Terraform itself runs against the PR head commit SHA resolved at the start of the run (the same SHA the commit status is reported on), so a push to the PR branch during the run cannot change what gets planned or applied. Unauthorized `apply` requests are rejected before any cloud credentials are configured.
-    - Cancelled runs report an `error` commit status and a comment with ❌ rows for roots that produced no artifact.
+    - Cancelled runs report an `error` commit status and a comment with ❌ rows for roots that produced no artifact, subject to the plan freshness guard described below.
 
 ### DriftDetection
 - **PURPOSE**:
@@ -118,6 +118,14 @@ The following command is executed in the some channel. If you add a new workflow
 ### Scripts
 - `gh-scripts/write-outputs.mjs`: Reads CLI JSON from stdin, converts it into workflow step outputs, and appends them to the required `GITHUB_OUTPUT` file. It also prints the input JSON to stdout for workflow logs. Use `matrix` mode for `detect-changes` / `select-targets`, and `command` mode for `operate-command`.
 - `gh-scripts/post-comment.mjs`: Utility script for posting comments to Pull Requests. It handles formatting of `terraform plan` and `terraform apply` results, and aggregating reports from multiple matrix jobs. The full output is posted inline when it fits the comment size budget. Oversized output falls back to only the summary table with a link to the workflow run summary. The table itself is trimmed with an omission row only if it still exceeds the limit. Comments always stay within the size limit. Each run job's **Job Summary** (`$GITHUB_STEP_SUMMARY`) contains plan/apply output truncated at approximately 900 KB per root to respect GitHub's Job Summary limit. Complete `plan.txt` / `apply.txt` files are included in the run artifacts, which are retained for 1 day.
+
+Plan comments from PRReview and PRComment include this machine-readable line immediately after the comment header, retained even when details or table rows are omitted:
+
+```text
+> tfman-plan-provenance: pr_head=<40-hex> merge_commit=<40-hex|none> run=<runURL>/attempts/<run_attempt>
+```
+
+The stamp identifies the run's own PR head, merge commit (PRReview), and run attempt. PRComment plans check out the PR head directly and use `merge_commit=none`. Apply comments are unchanged. Immediately before deleting or posting plan comments, the script checks the current PR head through the API. Both a head mismatch and a lookup failure skip deletion and posting, including cleanup-only runs and no-results notices. A head mismatch (a superseded run) only warns, while a lookup failure fails the job so it shows as a red check. To recover from a lookup failure, re-run the failed post job (`post-plan` / `post-run`) from the workflow run page (artifacts are retained for 1 day); if it still cannot be recovered, comment `$terraform plan` on the PR. The `$terraform plan` fallback does not apply to a cleanup-only run (a push that left no changed Terraform roots), because that command finds no targets and posts nothing, so re-run the `post-plan` job instead. A residual check-then-act race window remains if the PR head changes after this check. The guard only compares PR heads, so an older run on the same PR head (for example, a re-run of an earlier attempt or a run with a different merge commit) can still replace a newer run's comment; consumers should read the `merge_commit` and `run` fields of the stamp to judge which run produced the comment. Unstamped plan comments from earlier runs are replaced on the next verified current run.
 
 ## GitHub Scripts CLI
 

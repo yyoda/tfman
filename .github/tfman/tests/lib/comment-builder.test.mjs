@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { PlanCommentBuilder, ApplyCommentBuilder, COMMENT_NOISE_PATTERNS, DEFAULT_MAX_COMMENT_LENGTH } from '../../lib/comment-builder.mjs';
+import { PlanCommentBuilder, ApplyCommentBuilder, formatProvenance, COMMENT_NOISE_PATTERNS, DEFAULT_MAX_COMMENT_LENGTH } from '../../lib/comment-builder.mjs';
 
 describe('comment noise filtering', () => {
   it('exports an array of regular expressions', () => {
@@ -383,4 +383,42 @@ it('prioritizes a Plan summary over a No changes line', () => {
   const builder = new PlanCommentBuilder();
   builder.addResult('env/resources', 'No changes.\nPlan: 1 to add, 0 to change, 0 to destroy.', 'success');
   assert.ok(builder.buildComment().includes('| `env/resources` | ⚠️ | +1 add |'));
+});
+
+describe('plan provenance', () => {
+    const headSha = 'a'.repeat(40);
+    const mergeCommit = 'b'.repeat(40);
+    const runUrl = 'https://github.com/org/repo/actions/runs/9';
+    const stamp = formatProvenance({ headSha, mergeCommit, runUrl, runAttempt: '2' });
+
+    it('throws RangeError only for impossibly small budgets, with or without a stamp', () => {
+        const builder = new PlanCommentBuilder();
+        builder.addResult('env/a', 'Plan: 1 to add, 0 to change, 0 to destroy.');
+        for (const provenanceStamp of [undefined, stamp]) {
+            assert.throws(() => builder.buildComment({ stamp: provenanceStamp, maxCommentLength: 1 }), RangeError);
+            assert.doesNotThrow(() => builder.buildComment({ stamp: provenanceStamp, maxCommentLength: 1000 }));
+        }
+    });
+
+    it('formats the exact single-line stamp', () => {
+        assert.strictEqual(stamp, `> tfman-plan-provenance: pr_head=${headSha} merge_commit=${mergeCommit} run=${runUrl}/attempts/2`);
+        assert.strictEqual(formatProvenance({ headSha, runUrl, runAttempt: '1' }),
+            `> tfman-plan-provenance: pr_head=${headSha} merge_commit=none run=${runUrl}/attempts/1`);
+    });
+
+    for (const tier of ['normal', 'summary', 'rows']) {
+        it(`preserves provenance within the size budget in the ${tier} tier`, () => {
+            const builder = new PlanCommentBuilder();
+            const count = tier === 'rows' ? 100 : 1;
+            for (let i = 0; i < count; i++) {
+                builder.addResult(`module-${i}`, `Plan: 1 to add, 0 to change, 0 to destroy.\n${tier === 'normal' ? '' : 'x'.repeat(3000)}`);
+            }
+            const body = builder.buildComment({ runUrl, stamp, maxCommentLength: 1000 });
+            assert.ok(body.startsWith(`${PlanCommentBuilder.COMMENT_HEADER}\n${stamp}\n\n| Path`));
+            assert.ok(body.length <= 1000);
+            assert.strictEqual(body.includes('<details>'), tier === 'normal');
+            assert.strictEqual(body.includes('more paths omitted'), tier === 'rows');
+            assert.strictEqual(body.includes('Inline details were omitted'), tier !== 'normal');
+        });
+    }
 });
