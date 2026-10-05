@@ -7,10 +7,6 @@ This document consolidates the documentation for GitHub Actions Workflows and th
 ## GitHub Actions Workflows
 
 ### PRReview
-
-Triggered only by `pull_request` in `pr-review.yml`. Runs use the default title and
-`${{ github.workflow }}-${{ github.ref }}` concurrency group with cancellation enabled.
-
 - **PURPOSE**:
     - Determines Terraform execution paths and posts the results of `terraform plan` as a comment when a PR is created or updated.
 - **BEHAVIOR**:
@@ -19,38 +15,10 @@ Triggered only by `pull_request` in `pr-review.yml`. Runs use the default title 
     - Roots whose job fails before `terraform plan` runs (`fmt`, `init`, or `validate`) are listed as ❌ `Plan Failed` with `(Log file not found)` because no plan output exists; only failures inside `terraform plan` itself carry the captured error output, and plans that only change outputs are reported as changes rather than "No changes".
     - Finally, collects all results from artifacts and posts them in a comment. This flow is used to consolidate reports into a single post.
     - Previous plan comments are removed on each verified current run, including when no results were produced, by scanning all comment pages. A missing plan artifact for an expected root is shown as ❌ `Plan Failed`. Pushes with zero changed Terraform roots also delete old plan comments without posting a new comment.
-- **PERMISSIONS**:
-    - Workflow-level permissions are empty. `detect-changes` grants only `contents: read`; `plan` grants `contents: read` and `id-token: write`; `post-plan` grants `contents: read` and `pull-requests: write`.
-- **TRUST MODEL**:
-    - PRReview has no allowlist gate: its workflow YAML comes from the PR itself and cannot serve as an authorization boundary. Its artifacts are still downloaded into the checkout, which is PR-controlled by nature. Use PRReviewDispatch for the default-branch allowlist and scope checks described below.
 - **STATIC ANALYSIS** (steps appended to the `plan` job; per changed target, same scope as the plan):
     - **tflint** (gate) — installs the pinned `aws` plugin (cached under `~/.tflint.d/plugins`) and lints each changed root against the repo-root `.tflint.hcl`, passed via `--config` because tflint does not walk up to the repo root. Fails the job on findings at **warning severity or above** (hardcoded via `--minimum-failure-severity=warning`; edit that flag to change the threshold). Skipped when `.tflint.hcl` is absent. `.tflint.hcl`'s own `rule { enabled = false }` blocks already suppress `terraform_required_version` / `terraform_required_providers` (versions come from `.terraform-version`/tenv), so no CLI `--disable-rule` flags are needed.
     - **trivy** (informational) — scans each changed root using the repo-root `trivy.yaml`, writes a HIGH/CRITICAL summary to the Job Summary, and uploads the full JSON report as a `trivy-*` artifact. It **never fails the job** (`|| true`, no `--exit-code`) — advisory until the misconfiguration backlog is triaged. Skipped when `trivy.yaml` is absent.
     - Both run **after** the plan steps and even when `terraform plan` fails (`if: ${{ !cancelled() }}`), so a lint failure never suppresses the plan preview — the plan comment is still posted (post-plan runs with `!cancelled()`). Results of a cancelled PRReview run are no longer posted to the PR.
-
-### PRReviewDispatch
-
-Manual planning is a separate workflow in `pr-review-dispatch.yml`, named
-`PRReviewDispatch`. It uses the same plan, artifact, static-analysis and comment
-pipeline as PRReview. The plan steps are intentionally duplicated between the two
-workflow files; checkout selection and caching are the only differences.
-
-- **INPUTS AND VALIDATION**:
-    - `workflow_dispatch` requires string inputs `pr_number` (a positive PR number of at most nine digits, without leading zeros) and `head_sha` (40 lowercase hexadecimal characters). Anyone with repository write access can start a dispatch. Start dispatches only from the default branch so the workflow YAML comes from that branch. The first `Require default-branch ref` step rejects other refs before PR resolution. This is an operator safeguard, not a security boundary: someone who can edit a branch’s workflow can remove it. `detect-changes`, `plan`, and `post-plan` check out the validated PR head rather than a merge commit; `authorize-roots` checks out the default branch.
-    - Before checkout, dispatch rejects closed PRs, forks (including missing head repositories), stale head SHAs, and bases other than the repository default branch. API errors fail closed.
-    - After checkout, before running repository code, inline Bash verifies both immutable commits exist. The head tree must match the base tip for `.github`, `.tflint.hcl`, `trivy.yaml`, `.tfdeps.json`, `.tfdepsignore`, `.gitmodules`, `.gitattributes`, and the root `.terraform-version`. This two-dot comparison deliberately rejects branches behind base-side changes to protected paths: update your branch first. The PR's own three-dot diff also rejects added, removed, or modified symlinks/submodules and paths inside `.terraform/` or `.terraform.d/` at any depth. Unchanged symlinks already present at the base inside roots are accepted; their targets must be trusted.
-    - Dispatch never restores or saves the Terraform provider or TFLint plugin caches.
-    - The run title is exactly `PRReview #<pr_number> <head_sha>`. Dispatch concurrency is `PRReview-pr-<pr_number>` with cancellation of earlier runs in that group. A dispatch with the correct `pr_number` but an invalid or stale `head_sha` can cancel an in-flight run before validation.
-    - Dispatch checks attach to the default branch commit, not the PR head. The plan comment identifies the checked-out head and uses `merge_commit=none` in its provenance stamp.
-- **ROOT ALLOWLIST GATE**:
-    - Whenever changed Terraform roots exist, `authorize-roots` always applies, regardless of PR labels. It checks out the default branch and runs trusted `root-gate.mjs` against the whole matrix, resolving `heads/<default_branch>` through the Git API to a commit SHA and reading `.github/copilot-autofix-config.json` at that SHA. The config must contain an `enabledRoots` array of strings, for example `{"enabledRoots":["environments/test1"]}`. Each matrix root must match an entry exactly; prefixes do not match. Missing branch metadata, ref lookup errors, missing or invalid config, and content API errors fail closed.
-    - A single rejected root rejects the whole PR matrix before any plan job starts. The plan condition is exactly `needs.detect-changes.outputs.has-changes == 'true'`, with implicit `success()` requiring both detection and authorization to succeed. Failed, skipped, or cancelled authorization and failed detection prevent planning, even if detection already emitted `has-changes=true`. All plan jobs are skipped on rejection; `post-plan` still reports failure rows for every expected root with “No result artifact was produced”.
-    - The allowlist is a CI-side control, not a cloud IAM boundary. An enabled root’s Terraform providers, modules, external data programs, and lock file still run with that root’s credentials; cloud roles should carry their own trust conditions.
-- **RESULT ARTIFACTS**:
-    - Dispatch downloads plan artifacts into `${{ runner.temp }}/tfman-plans`, outside the checkout, and passes that directory as `artifactRoot` to the comment script. PR-committed `plans/**/info.json` files cannot supply dispatch results. Missing artifacts produce failure rows for expected roots, including when authorization rejects the matrix.
-    - For all callers with non-empty `expectedPaths`, unexpected result paths are ignored with a warning and duplicate results produce one failed row for that path. With no expected paths, existing behavior is retained. `artifactRoot` defaults to `plans` for plan and `applies` for apply, relative to the working directory.
-- **PERMISSIONS**:
-    - As in PRReview, workflow-level permissions are empty. `detect-changes` has `contents: read` and `pull-requests: read`; `authorize-roots` has only `contents: read`; `plan` has `contents: read` and `id-token: write`; `post-plan` has `contents: read` and `pull-requests: write`.
 
 ### ManualOps
 - **PURPOSE**:
@@ -134,7 +102,7 @@ For update instructions, please refer to the **CLI Scripts** section below.
 The following command is executed in the some channel. If you add a new workflow, you need to add the new workflow name to the command above and subscribe again.
 
 ```bash
-/github subscribe org/repo workflows:{name: "DriftDetection,PRReview,PRReviewDispatch,ManualOps,PRComment"}
+/github subscribe org/repo workflows:{name: "DriftDetection,PRReview,ManualOps,PRComment"}
 ```
 
 ---
@@ -151,13 +119,22 @@ The following command is executed in the some channel. If you add a new workflow
 - `gh-scripts/write-outputs.mjs`: Reads CLI JSON from stdin, converts it into workflow step outputs, and appends them to the required `GITHUB_OUTPUT` file. It also prints the input JSON to stdout for workflow logs. Use `matrix` mode for `detect-changes` / `select-targets`, and `command` mode for `operate-command`.
 - `gh-scripts/post-comment.mjs`: Utility script for posting comments to Pull Requests. It handles formatting of `terraform plan` and `terraform apply` results, and aggregating reports from multiple matrix jobs. The full output is posted inline when it fits the comment size budget. Oversized output falls back to only the summary table with a link to the workflow run summary. The table itself is trimmed with an omission row only if it still exceeds the limit. Comments always stay within the size limit. Each run job's **Job Summary** (`$GITHUB_STEP_SUMMARY`) contains plan/apply output truncated at approximately 900 KB per root to respect GitHub's Job Summary limit. Complete `plan.txt` / `apply.txt` files are included in the run artifacts, which are retained for 1 day.
 
-Plan comments from PRReview, PRReviewDispatch and PRComment include this machine-readable line immediately after the comment header, retained even when details or table rows are omitted:
+Plan comments from PRReview and PRComment include this machine-readable line immediately after the comment header, retained even when details or table rows are omitted:
 
 ```text
 > tfman-plan-provenance: pr_head=<40-hex> merge_commit=<40-hex|none> run=<runURL>/attempts/<run_attempt>
 ```
 
-The stamp identifies the run's own PR head, merge commit (pull-request PRReview runs), and run attempt. PRComment plans and PRReviewDispatch plans check out the PR head directly and use `merge_commit=none`. Apply comments are unchanged. Immediately before deleting or posting plan comments, the script checks the current PR head through the API. Both a head mismatch and a lookup failure skip deletion and posting, including cleanup-only runs and no-results notices. A head mismatch (a superseded run) only warns, while a lookup failure fails the job so it shows as a red check. To recover from a lookup failure, re-run the failed post job (`post-plan` / `post-run`) from the workflow run page (artifacts are retained for 1 day); if it still cannot be recovered, comment `$terraform plan` on the PR. The `$terraform plan` fallback does not apply to a cleanup-only run (a push that left no changed Terraform roots), because that command finds no targets and posts nothing, so re-run the `post-plan` job instead. A residual check-then-act race window remains if the PR head changes after this check. The guard only compares PR heads, so an older run on the same PR head (for example, a re-run of an earlier attempt or a run with a different merge commit) can still replace a newer run's comment; consumers should read the `merge_commit` and `run` fields of the stamp to judge which run produced the comment. Unstamped plan comments from earlier runs are replaced on the next verified current run.
+The stamp identifies the run's own PR head, merge commit (PRReview), and run attempt. PRComment plans check out the PR head directly and use `merge_commit=none`. Apply comments are unchanged. Immediately before deleting or posting plan comments, the script checks the current PR head through the API. Both a head mismatch and a lookup failure skip deletion and posting, including cleanup-only runs and no-results notices. A head mismatch (a superseded run) only warns, while a lookup failure fails the job so it shows as a red check. To recover from a lookup failure, re-run the failed post job (`post-plan` / `post-run`) from the workflow run page (artifacts are retained for 1 day); if it still cannot be recovered, comment `$terraform plan` on the PR. The `$terraform plan` fallback does not apply to a cleanup-only run (a push that left no changed Terraform roots), because that command finds no targets and posts nothing, so re-run the `post-plan` job instead. A residual check-then-act race window remains if the PR head changes after this check. The guard only compares PR heads, so an older run on the same PR head (for example, a re-run of an earlier attempt or a run with a different merge commit) can still replace a newer run's comment; consumers should read the `merge_commit` and `run` fields of the stamp to judge which run produced the comment. Unstamped plan comments from earlier runs are replaced on the next verified current run.
+
+Callers that run outside a `pull_request` or `issue_comment` event (for example a workflow of your own started with `workflow_dispatch`) can pass these `post-comment.mjs` options:
+
+- `issueNumber`: the pull request number to read, delete and post comments on, and to run the freshness check against. It must be a positive integer; otherwise the script fails without writing anything. By default the number comes from the event context.
+- `artifactRoot`: the directory that holds the downloaded result artifacts (default `plans` for plan, `applies` for apply, relative to the working directory). Download them outside the checkout when the checked-out code is not trusted, because files committed in the repository could otherwise be read as results.
+
+When `expectedPaths` is given, results for any other path are ignored with a warning, and a path with more than one result is reported as failed.
+
+PRReview runs each job with its own token permissions (`detect-changes`: `contents: read`; `plan`: `contents: read` and `id-token: write`; `post-plan`: `contents: read` and `pull-requests: write`) instead of one set for the whole workflow.
 
 ## GitHub Scripts CLI
 

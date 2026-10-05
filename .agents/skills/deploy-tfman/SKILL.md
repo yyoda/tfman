@@ -86,7 +86,6 @@ WORKFLOW_FILES=(
   manual-ops.yml
   pr-comment.yml
   pr-review.yml
-  pr-review-dispatch.yml
   README.md
 )
 for f in "${WORKFLOW_FILES[@]}"; do
