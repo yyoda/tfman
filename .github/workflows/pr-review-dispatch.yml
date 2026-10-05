@@ -1,33 +1,104 @@
-name: PRReview
+name: PRReviewDispatch
+run-name: >-
+  ${{ format('PRReview #{0} {1}', inputs.pr_number, inputs.head_sha) }}
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    branches:
-      - master
-      - main
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to plan
+        type: string
+        required: true
+      head_sha:
+        description: Expected PR head SHA (40 lowercase hex characters)
+        type: string
+        required: true
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: PRReview-pr-${{ inputs.pr_number }}
   cancel-in-progress: true
 
 permissions: {}
 
 env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+  ROOT_GATE_CONFIG: .github/copilot-autofix-config.json
 
 jobs:
   detect-changes:
     permissions:
       contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       has-changes: ${{ steps.set-matrix.outputs.has-changes }}
     steps:
+      - name: Require default-branch ref
+        if: github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
+        run: echo 'PRReviewDispatch must be started from the default branch' >&2; exit 1
+
+      - name: Resolve PR context
+        id: pr-context
+        uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+        with:
+          script: |
+            try {
+              let pr;
+              if (!/^[1-9][0-9]{0,8}$/.test(process.env.PR_NUMBER) || !/^[0-9a-f]{40}$/.test(process.env.HEAD_SHA)) {
+                throw new Error('Invalid pr_number or head_sha');
+              }
+              const { owner, repo } = context.repo;
+              const pull_number = Number(process.env.PR_NUMBER);
+              ({ data: pr } = await github.rest.pulls.get({ owner, repo, pull_number }));
+              if (pr.state !== 'open') throw new Error('Dispatch requires an open PR');
+              if (!pr.head.repo || pr.head.repo.full_name !== `${owner}/${repo}`) throw new Error('Dispatch refuses fork PRs');
+              if (pr.head.sha !== process.env.HEAD_SHA) throw new Error('Dispatch refuses stale head SHAs');
+              if (pr.base.ref !== context.payload.repository.default_branch) throw new Error('Dispatch requires the default branch as base');
+              core.setOutput('base_sha', pr.base.sha);
+              core.setOutput('head_sha', pr.head.sha);
+            } catch (error) {
+              core.setFailed(error.message);
+            }
+
       - uses: actions/checkout@v5
         with:
+          ref: ${{ inputs.head_sha }}
           fetch-depth: 0
+
+      - name: Verify dispatch scope
+        env:
+          BASE_SHA: ${{ steps.pr-context.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.pr-context.outputs.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -c core.fsmonitor=false cat-file -e "$BASE_SHA^{commit}"
+          git -c core.fsmonitor=false cat-file -e "$HEAD_SHA^{commit}"
+          if ! git -c diff.external= -c core.fsmonitor=false diff --no-ext-diff --no-textconv --quiet "$BASE_SHA" "$HEAD_SHA" -- .github .tflint.hcl trivy.yaml .tfdeps.json .tfdepsignore .gitmodules .gitattributes .terraform-version; then
+            echo 'Dispatch protected paths differ from the base tip; update your branch and restore protected paths.' >&2
+            exit 1
+          fi
+          scope_diff=$(mktemp "${TMPDIR:-/tmp}/dispatch-scope.XXXXXX")
+          trap 'rm -f "$scope_diff"' EXIT
+          git -c diff.external= -c core.fsmonitor=false diff --no-ext-diff --no-textconv --raw --no-renames -z "$BASE_SHA...$HEAD_SHA" -- > "$scope_diff"
+          while IFS= read -r -d '' metadata; do
+            IFS= read -r -d '' path || { echo 'Invalid raw diff entry' >&2; exit 1; }
+            read -r old_mode new_mode _ <<< "$metadata"
+            case "$old_mode $new_mode" in
+              *120000*|*160000*)
+                printf 'Dispatch refuses symlinks or submodules: %s\n' "$path" >&2
+                exit 1 ;;
+            esac
+            case "/$path/" in
+              */.terraform/*|*/.terraform.d/*)
+                printf 'Dispatch refuses generated Terraform trees: %s\n' "$path" >&2
+                exit 1 ;;
+            esac
+          done < "$scope_diff"
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -36,18 +107,43 @@ jobs:
 
       - name: Detect Changes
         id: set-matrix
+        env:
+          BASE_SHA: ${{ steps.pr-context.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.pr-context.outputs.head_sha }}
         run: |
           set -euo pipefail
           node .github/tfman/cli/index.mjs detect-changes \
-            --base ${{ github.event.pull_request.base.sha }} \
-            --head ${{ github.event.pull_request.head.sha }} \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA" \
             | node .github/tfman/gh-scripts/write-outputs.mjs matrix
+
+  authorize-roots:
+    permissions:
+      contents: read
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has-changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/heads/${{ github.event.repository.default_branch }}
+
+      - name: Root allowlist gate
+        uses: actions/github-script@v8
+        env:
+          MATRIX: ${{ needs.detect-changes.outputs.matrix }}
+          GATE_CONFIG: ${{ env.ROOT_GATE_CONFIG }}
+        with:
+          script: |
+            const { default: script } = await import(`${process.env.GITHUB_WORKSPACE}/.github/tfman/gh-scripts/root-gate.mjs`);
+            const roots = JSON.parse(process.env.MATRIX).include.map(entry => entry.path);
+            await script({github, context, core}, { roots, configPath: process.env.GATE_CONFIG });
 
   plan:
     permissions:
       contents: read
       id-token: write
-    needs: detect-changes
+    needs: [detect-changes, authorize-roots]
     if: needs.detect-changes.outputs.has-changes == 'true'
     runs-on: ubuntu-latest
     name: plan on ${{ matrix.path }}
@@ -61,6 +157,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
 
       - name: Create Cache Dir
         run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
@@ -98,14 +196,6 @@ jobs:
         with:
           workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
-
-      - name: Cache Terraform Providers
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
-          key: ${{ runner.os }}-tf-plugin-${{ hashFiles('**/.terraform.lock.hcl') }}
-          restore-keys: |
-            ${{ runner.os }}-tf-plugin-
 
       - name: Read Terraform Version
         id: tf-version
@@ -199,13 +289,6 @@ jobs:
         with:
           tflint_version: v0.63.1
 
-      - name: Cache TFLint plugins
-        if: ${{ !cancelled() && hashFiles('.tflint.hcl') != '' }}
-        uses: actions/cache@v5
-        with:
-          path: ~/.tflint.d/plugins
-          key: ${{ runner.os }}-tflint-${{ hashFiles('.tflint.hcl') }}
-
       - name: TFLint (fail on warning+)
         if: ${{ !cancelled() && hashFiles('.tflint.hcl') != '' }}
         env:
@@ -221,26 +304,29 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    needs: [detect-changes, plan]
+    needs: [detect-changes, authorize-roots, plan]
     runs-on: ubuntu-latest
     if: ${{ !cancelled() && needs.detect-changes.result == 'success' }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
 
       - name: Download Plans
         if: needs.detect-changes.outputs.has-changes == 'true'
         uses: actions/download-artifact@v8
         with:
           pattern: plan-*
-          path: plans
+          path: ${{ runner.temp }}/tfman-plans
           merge-multiple: false
 
       - name: Post Plan Result
         uses: actions/github-script@v8
         env:
           MATRIX: ${{ needs.detect-changes.outputs.matrix }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ inputs.head_sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          ARTIFACT_ROOT: ${{ runner.temp }}/tfman-plans
           RUN_ATTEMPT: ${{ github.run_attempt }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -248,4 +334,4 @@ jobs:
             const { default: script } = await import('${{ github.workspace }}/.github/tfman/gh-scripts/post-comment.mjs');
             const hasChanges = '${{ needs.detect-changes.outputs.has-changes }}' === 'true';
             const expectedPaths = process.env.MATRIX ? JSON.parse(process.env.MATRIX).include.map(i => i.path) : [];
-            await script({github, context, core, glob}, { expectedPaths, mode: 'plan', deletePreviousComments: true, cleanupOnly: !hasChanges, provenance: { headSha: process.env.PR_HEAD_SHA, mergeCommit: process.env.MERGE_SHA, runAttempt: process.env.RUN_ATTEMPT } });
+            await script({github, context, core, glob}, { issueNumber: Number(process.env.PR_NUMBER), artifactRoot: process.env.ARTIFACT_ROOT, expectedPaths, mode: 'plan', deletePreviousComments: true, cleanupOnly: !hasChanges, provenance: { headSha: process.env.PR_HEAD_SHA, runAttempt: process.env.RUN_ATTEMPT } });

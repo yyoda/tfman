@@ -15,6 +15,11 @@ import { PlanCommentBuilder, ApplyCommentBuilder, formatProvenance } from '../li
  */
 export default async ({ github, context, core, glob }, options = {}, deps = {}) => {
   const { fs = _fs, path = _path } = deps;
+  if (options.issueNumber != null && (!Number.isInteger(options.issueNumber) || options.issueNumber <= 0)) {
+    if (core) core.setFailed('Invalid issueNumber: must be a positive integer.');
+    return;
+  }
+  const issueNumber = options.issueNumber ?? context.issue.number;
   const config = {
       mode: options.mode || 'plan',
       deletePreviousComments: options.deletePreviousComments === true,
@@ -32,12 +37,12 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   const behaviors = {
     plan: {
       logFile: 'plan.txt',
-      artifactPattern: 'plans/**/info.json',
+      artifactRoot: 'plans',
       Builder: PlanCommentBuilder
     },
     apply: {
       logFile: 'apply.txt',
-      artifactPattern: 'applies/**/info.json',
+      artifactRoot: 'applies',
       Builder: ApplyCommentBuilder
     }
   };
@@ -63,7 +68,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       const { data } = await github.rest.pulls.get({
         owner: context.repo.owner,
         repo: context.repo.repo,
-        pull_number: context.issue.number,
+        pull_number: issueNumber,
       });
       if (data.head.sha === provenance.headSha) return true;
       if (core) core.warning('Skipped stale plan comments: the PR head no longer matches this run.');
@@ -86,7 +91,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       const comments = await github.paginate(github.rest.issues.listComments, {
         owner: context.repo.owner,
         repo: context.repo.repo,
-        issue_number: context.issue.number,
+        issue_number: issueNumber,
         per_page: 100,
       });
 
@@ -115,7 +120,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
   }
 
   // 1. Collect result artifacts
-  const globber = await glob.create(behavior.artifactPattern);
+  const globber = await glob.create(path.join(options.artifactRoot ?? behavior.artifactRoot, '**', 'info.json'));
   const infoFiles = await globber.glob();
 
   if (infoFiles.length === 0 && config.expectedPaths.length === 0) {
@@ -127,17 +132,31 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
     await github.rest.issues.createComment({
         owner: context.repo.owner,
         repo: context.repo.repo,
-        issue_number: context.issue.number,
+        issue_number: issueNumber,
         body: message
     });
     return;
   }
 
   // 2. Add results to Builder
-  const resultPaths = new Set();
+  const resultPaths = new Set(); // Count metadata paths even if their log cannot be read.
+  const expectedPaths = new Set(config.expectedPaths);
+  const results = new Map();
   for (const infoFile of infoFiles) {
     try {
       const info = JSON.parse(fs.readFileSync(infoFile, 'utf8'));
+      if (expectedPaths.size > 0) {
+        if (!expectedPaths.has(info.path)) {
+          if (core) core.warning(`Ignoring unexpected result artifact for ${info.path}`);
+          continue;
+        }
+        if (resultPaths.has(info.path)) {
+          if (core) core.warning(`Duplicate result artifacts for ${info.path}`);
+          results.set(info.path, { content: '(Duplicate result artifacts were produced for this path)', outcome: 'failure' });
+          continue;
+        }
+        resultPaths.add(info.path);
+      }
       const dir = path.dirname(infoFile);
       const logPath = path.join(dir, behavior.logFile);
       
@@ -145,16 +164,20 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       const content = logExists ? fs.readFileSync(logPath, 'utf8') : '(Log file not found)';
       const outcome = logExists ? (info.outcome ?? 'success') : 'failure';
       
-      builder.addResult(info.path, content, outcome);
-      resultPaths.add(info.path);
+      if (expectedPaths.size > 0) results.set(info.path, { content, outcome });
+      else builder.addResult(info.path, content, outcome);
 
     } catch (error) {
       if (core) core.error(`Error processing ${infoFile}: ${error.message}`);
     }
   }
 
-  for (const expectedPath of new Set(config.expectedPaths)) {
-    if (!resultPaths.has(expectedPath)) {
+  for (const [resultPath, { content, outcome }] of results) {
+    builder.addResult(resultPath, content, outcome);
+  }
+
+  for (const expectedPath of expectedPaths) {
+    if (!results.has(expectedPath)) {
       builder.addResult(expectedPath, '(No result artifact was produced for this path — the job may have been cancelled or failed before uploading)', 'failure');
     }
   }
@@ -169,7 +192,7 @@ export default async ({ github, context, core, glob }, options = {}, deps = {}) 
       await github.rest.issues.createComment({
         owner: context.repo.owner,
         repo: context.repo.repo,
-        issue_number: context.issue.number,
+        issue_number: issueNumber,
         body
       });
     }

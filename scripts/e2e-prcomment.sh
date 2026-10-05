@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
     printf '%s\n' 'Usage: e2e-prcomment.sh [options]' \
-        'Maintainer-run PRReview/PRComment test on the current repository.' \
+        'Maintainer-run PRReview/PRReviewDispatch/PRComment test on the current repository.' \
         '  --base <branch>     Base branch (default: main)' \
         '  --keep              Keep the temporary draft PR and remote branch' \
         '  --toggle-appliers   Temporarily set APPLIERS to [] and test denial' \
@@ -11,7 +11,8 @@ usage() {
         '  --skip-apply        Skip authorized apply' \
         '  --timeout <seconds> Timeout per wait (default: 900)' \
         '  -h, --help          Show usage without accessing Git or the network' \
-        'Checks plan provenance stamps, post-job reruns, and stale reruns.' \
+        'Checks plan provenance stamps, post-job reruns, stale reruns, dispatch gate, and stale-head dispatch.' \
+        'Dispatch scenarios use pr-review-dispatch.yml from the default branch (--base).' \
         'Run against main after the feature is merged, in one sitting: artifacts are retained 1 day.'
 }
 die() { printf '==> %s\n' "$*" >&2; exit 1; }
@@ -342,6 +343,75 @@ stale_post_job_rerun() {
     snapshot=$(plan_comments) || return 1
     [[ $snapshot == "$rerun_snapshot" ]] || { note='Stale rerun changed plan comments'; return 1; }
 }
+require_default_base() {
+    local default_branch
+    # `gh repo view` takes the repository as a positional argument (it has no --repo flag).
+    default_branch=$(gh repo view "$repo" --json defaultBranchRef -q .defaultBranchRef.name) || return 1
+    [[ $base == "$default_branch" ]] || { note='Dispatch base must equal the repository default branch'; return 1; }
+}
+wait_for_dispatch_run() {
+    local previous=$1 expected_head=$2 runs id end=$((SECONDS + timeout))
+    while ((SECONDS < end)); do
+        runs=$(gh run list --repo "$repo" --workflow pr-review-dispatch.yml --event workflow_dispatch --branch "$base" --limit 100 --json databaseId,displayTitle,headBranch,event) || return 1
+        id=$(jq -r --arg title "PRReview #$pr $expected_head" --arg base "$base" --argjson previous "$previous" '
+            [.[] | select(.databaseId > $previous and .displayTitle == $title and .headBranch == $base and .event == "workflow_dispatch")]
+            | sort_by(.databaseId) | first | .databaseId // 0' <<< "$runs") || return 1
+        if ((id > previous)); then printf '%s\n' "$id"; return 0; fi
+        sleep 5
+    done
+    progress 'Timed out waiting for the matching dispatch run'; return 1
+}
+dispatch_gate() {
+    local title snapshot roots root_path jobs
+    require_default_base || return 1
+    refresh_head || return 1
+    previous=$(newest_run pr-review-dispatch.yml --event workflow_dispatch) || return 1
+    gh workflow run pr-review-dispatch.yml --repo "$repo" --ref "$base" -f pr_number="$pr" -f head_sha="$sha" || return 1
+    run=$(wait_for_dispatch_run "$previous" "$sha") || return 1
+    title=$(gh run view "$run" --repo "$repo" --json displayTitle -q .displayTitle) || return 1
+    [[ $title == "PRReview #$pr $sha" ]] || { note='Unexpected dispatch run title'; return 1; }
+    data=$(wait_for_completion "$run") || return 1
+    assert_json "$data" '.conclusion == "failure" and ([.jobs[] | select(.name == "detect-changes" or .name == "post-plan")] | length == 2 and all(.conclusion == "success"))' 'Dispatch detect-changes or post-plan did not succeed' || return 1
+    assert_json "$data" '[.jobs[] | select(.name == "authorize-roots")] | length == 1 and all(.conclusion == "failure")' 'Dispatch authorization did not fail' || return 1
+    # The rejection must come from the gate itself, not from a checkout or import failure.
+    assert_json "$data" '[.jobs[] | select(.name == "authorize-roots") | .steps[]? | select((.name | startswith("Run actions/checkout")) and .conclusion == "success")] | length == 1' 'Authorization checkout did not succeed' || return 1
+    assert_json "$data" '[.jobs[] | select(.name == "authorize-roots") | .steps[]? | select(.name == "Root allowlist gate" and .conclusion == "failure")] | length == 1' 'The Root allowlist gate step did not fail' || return 1
+    assert_json "$data" '[.jobs[] | select(.name == "plan" or (.name | startswith("plan on ")))] | all(.conclusion == "skipped" and ([.steps[]? | select(.conclusion != "skipped")] | length == 0))' 'Rejected dispatch started a plan job' || return 1
+    snapshot=$(plan_comments) || return 1
+    assert_json "$snapshot" 'length == 1' 'Expected exactly one dispatch plan comment' || return 1
+    body=$(jq -r '.[0].body' <<< "$snapshot") || return 1
+    roots=$(jq -r '[.jobs[] | select(.name | startswith("plan on ")) | .name | ltrimstr("plan on ")] | unique[]' <<< "$data") || return 1
+    if [[ -z $roots ]]; then
+        # A rejected gate can leave an unexpanded plan job. The preceding
+        # PRReview run planned the same fixture head and exposes its matrix.
+        [[ -n $broken_review_run ]] || { note='Missing fixture run for expected roots'; return 1; }
+        jobs=$(gh run view "$broken_review_run" --repo "$repo" --json jobs,headSha) || return 1
+        [[ $(jq -r .headSha <<< "$jobs") == "$sha" ]] || { note='Fixture run has a different head'; return 1; }
+        roots=$(jq -r '[.jobs[] | select(.name | startswith("plan on ")) | .name | ltrimstr("plan on ")] | unique[]' <<< "$jobs") || return 1
+    fi
+    [[ -n $roots ]] || { note='Could not determine expected roots from run jobs'; return 1; }
+    while IFS= read -r root_path; do
+        contains "$body" "\`$root_path\` | ❌ | Plan Failed" || return 1
+    done <<< "$roots"
+    contains "$body" 'No result artifact was produced' || return 1
+    assert_stamp "$body" "$sha" none "$run" 1
+}
+dispatch_stale_head() {
+    local before after stale_head
+    require_default_base || return 1
+    refresh_head || return 1
+    before=$(plan_comments) || return 1
+    stale_head=$first_head
+    if [[ $stale_head == "$sha" ]]; then stale_head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; fi
+    previous=$(newest_run pr-review-dispatch.yml --event workflow_dispatch) || return 1
+    gh workflow run pr-review-dispatch.yml --repo "$repo" --ref "$base" -f pr_number="$pr" -f head_sha="$stale_head" || return 1
+    run=$(wait_for_dispatch_run "$previous" "$stale_head") || return 1
+    data=$(wait_for_completion "$run") || return 1
+    assert_json "$data" '.conclusion == "failure" and ([.jobs[] | select(.name == "detect-changes")] | length == 1 and all(.conclusion == "failure")) and ([.jobs[] | select(.name == "plan" or (.name | startswith("plan on ")) or .name == "authorize-roots" or .name == "post-plan")] | all(.conclusion == "skipped"))' 'Stale dispatch did not fail in detect-changes with downstream jobs skipped' || return 1
+    assert_json "$data" '[.jobs[] | select(.name == "detect-changes") | .steps[]? | select(.name == "Resolve PR context")] | length == 1 and all(.conclusion == "failure")' 'Stale dispatch did not fail at Resolve PR context' || return 1
+    after=$(plan_comments) || return 1
+    [[ $after == "$before" ]] || { note='Stale dispatch changed plan comments'; return 1; }
+}
 cleanup_only_changes() {
     local before after snapshot end
     before=$(apply_comments) || return 1
@@ -409,6 +479,8 @@ if ! "$skip_apply"; then scenario 'Authorized apply' authorized_apply; fi
 scenario 'Broken fixture' broken_fixture
 scenario 'Post-job rerun' post_job_rerun
 scenario 'Stale post-job rerun' stale_post_job_rerun
+scenario 'Dispatch gate' dispatch_gate
+scenario 'Dispatch stale head' dispatch_stale_head
 if "$cleanup_only"; then scenario 'Cleanup-only' cleanup_only_changes; fi
 table=$(printf '%s\n' '| Scenario | Result | Note |' '| --- | --- | --- |' "${results[@]}")
 gh pr comment "$pr" --repo "$repo" --body "$table" || failed=1
