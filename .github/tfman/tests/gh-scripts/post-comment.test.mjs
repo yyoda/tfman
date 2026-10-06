@@ -442,3 +442,121 @@ describe('post-comment.mjs', () => {
     }
 
 });
+
+describe('post-comment issueNumber', () => {
+    for (const issueNumber of [456, undefined, null]) {
+        for (const expectedPaths of [[], ['env/a']]) {
+            it(`uses ${issueNumber ?? 'context issue'} for freshness, cleanup and posting (${expectedPaths.length} paths)`, async () => {
+                const headSha = 'a'.repeat(40);
+                const listComments = mock.fn(async () => ({ data: [{ id: 99, user: { type: 'Bot' }, body: PlanCommentBuilder.COMMENT_HEADER }] }));
+                const deleteComment = mock.fn();
+                const createComment = mock.fn();
+                const get = mock.fn(async () => ({ data: { head: { sha: headSha } } }));
+                const setFailed = mock.fn();
+                await postComment({
+                    github: { paginate: async (fn, params) => (await fn(params)).data, rest: { pulls: { get }, issues: { listComments, deleteComment, createComment } } },
+                    context: { repo: { owner: 'owner', repo: 'repo' }, issue: { number: 123 }, runId: 1 },
+                    core: { setFailed, info() {} },
+                    glob: { create: async () => ({ glob: async () => [] }) },
+                }, { issueNumber, expectedPaths, deletePreviousComments: true, provenance: { headSha, runAttempt: 1 } });
+                assert.equal(setFailed.mock.callCount(), 0);
+                assert.equal(get.mock.calls[0].arguments[0].pull_number, issueNumber ?? 123);
+                assert.equal(listComments.mock.calls[0].arguments[0].issue_number, issueNumber ?? 123);
+                assert.equal(createComment.mock.calls[0].arguments[0].issue_number, issueNumber ?? 123);
+                assert.deepEqual(deleteComment.mock.calls[0].arguments[0], { owner: 'owner', repo: 'repo', comment_id: 99 });
+            });
+        }
+    }
+    for (const issueNumber of [0, -1, 1.5, '456', NaN, Infinity, false]) {
+        it(`rejects invalid issueNumber ${String(issueNumber)} before any API call`, async () => {
+            const setFailed = mock.fn();
+            await postComment({ github: {}, context: {}, core: { setFailed } }, { issueNumber });
+            assert.equal(setFailed.mock.callCount(), 1);
+            assert.match(setFailed.mock.calls[0].arguments[0], /Invalid issueNumber/);
+        });
+    }
+});
+
+describe('post-comment artifact isolation', () => {
+    async function report(files, options = {}) {
+        const warning = mock.fn();
+        const createComment = mock.fn();
+        const create = mock.fn(async () => ({ glob: async () => Object.keys(files) }));
+        await postComment({
+            github: { rest: { issues: { createComment } } },
+            context: { repo: { owner: 'owner', repo: 'repo' }, issue: { number: 1 } },
+            core: { warning, info() {}, error(message) { assert.fail(message); } },
+            glob: { create },
+        }, options, { fs: {
+            existsSync: () => true,
+            readFileSync: file => file.endsWith('/info.json') ? JSON.stringify(files[file])
+                : options.mode === 'apply' ? 'Apply complete! Resources: 1 added, 0 changed, 0 destroyed.' : 'No changes. Infrastructure is up-to-date.',
+        } });
+        return { body: createComment.mock.calls[0].arguments[0].body, warning, create };
+    }
+
+    for (const mode of ['plan', 'apply']) {
+        it('keeps default artifact root and unrestricted ' + mode + ' behavior', async () => {
+            const root = mode === 'plan' ? 'plans' : 'applies';
+            const result = await report({ [root + '/a/info.json']: { path: 'env/a' }, [root + '/b/info.json']: { path: 'env/a' } }, { mode });
+            assert.equal(result.create.mock.calls[0].arguments[0], root + '/**/info.json');
+            assert.equal(result.warning.mock.callCount(), 0);
+            assert.doesNotMatch(result.body, /Duplicate result/);
+            assert.ok(result.body.includes('✅'));
+        });
+        it('ignores unexpected ' + mode + ' result paths', async () => {
+            const result = await report({ 'plans/unexpected/info.json': { path: 'env/unexpected', outcome: 'success' } }, { mode, expectedPaths: ['env/a'] });
+            assert.doesNotMatch(result.body, /env\/unexpected/);
+            assert.ok(result.body.includes('`env/a` | ❌'));
+            assert.match(result.warning.mock.calls[0].arguments[0], /Ignoring unexpected/);
+        });
+        it('fails duplicate ' + mode + ' results without retaining success rows', async () => {
+            const result = await report(Object.fromEntries(['a', 'b', 'c'].map(name => ['plans/' + name + '/info.json', { path: 'env/a', outcome: 'success' }])), { mode, expectedPaths: ['env/a'] });
+            assert.ok(result.body.includes('`env/a` | ❌'));
+            assert.doesNotMatch(result.body, /✅/);
+            assert.match(result.body, /\(Duplicate result artifacts were produced for this path\)/);
+            assert.equal(result.warning.mock.callCount(), 2);
+        });
+    }
+
+    for (const hasRealArtifact of [true, false]) {
+        it('ignores checkout forgeries with external artifacts present: ' + hasRealArtifact, async t => {
+            const fsp = await import('node:fs/promises');
+            const { tmpdir } = await import('node:os');
+            const { join } = await import('node:path');
+            const dir = await fsp.mkdtemp(join(tmpdir(), 'tfman-artifact-isolation-'));
+            t.after(async () => {
+                await fsp.rm(dir, { recursive: true, force: true });
+                await assert.rejects(fsp.access(dir), { code: 'ENOENT' });
+            });
+            const checkout = join(dir, 'checkout');
+            const artifactRoot = join(dir, 'runner-temp', 'tfman-plans');
+            const forgedDir = join(checkout, 'plans', 'forged');
+            const realDir = join(artifactRoot, 'plan-a');
+            await fsp.mkdir(forgedDir, { recursive: true });
+            await fsp.mkdir(realDir, { recursive: true });
+            await fsp.writeFile(join(forgedDir, 'info.json'), JSON.stringify({ path: 'env/a', outcome: 'success' }));
+            await fsp.writeFile(join(forgedDir, 'plan.txt'), 'No changes. Infrastructure is up-to-date.');
+            if (hasRealArtifact) {
+                await fsp.writeFile(join(realDir, 'info.json'), JSON.stringify({ path: 'env/a', outcome: 'failure' }));
+                await fsp.writeFile(join(realDir, 'plan.txt'), 'Error: real plan failed');
+            }
+            const createComment = mock.fn();
+            const create = mock.fn(async pattern => {
+                assert.equal(pattern, artifactRoot + '/**/info.json');
+                const selectedRoot = pattern.slice(0, -'/**/info.json'.length);
+                const entries = await fsp.readdir(selectedRoot, { recursive: true });
+                return { glob: async () => entries.filter(entry => entry.endsWith('info.json')).map(entry => join(selectedRoot, entry)) };
+            });
+            await postComment({
+                github: { rest: { issues: { createComment } } },
+                context: { repo: { owner: 'owner', repo: 'repo' }, issue: { number: 1 } },
+                core: { info() {}, warning() {}, error(message) { assert.fail(message); } }, glob: { create },
+            }, { artifactRoot, expectedPaths: ['env/a'] });
+            const body = createComment.mock.calls[0].arguments[0].body;
+            assert.ok(body.includes('| `env/a` | ❌ | Plan Failed |'));
+            assert.doesNotMatch(body, /✅|No changes/);
+            assert.match(body, hasRealArtifact ? /real plan failed/ : /No result artifact was produced/);
+        });
+    }
+});

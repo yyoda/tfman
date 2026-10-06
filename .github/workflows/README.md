@@ -127,6 +127,13 @@ Plan comments from PRReview and PRComment include this machine-readable line imm
 
 The stamp identifies the run's own PR head, merge commit (PRReview), and run attempt. PRComment plans check out the PR head directly and use `merge_commit=none`. Apply comments are unchanged. Immediately before deleting or posting plan comments, the script checks the current PR head through the API. Both a head mismatch and a lookup failure skip deletion and posting, including cleanup-only runs and no-results notices. A head mismatch (a superseded run) only warns, while a lookup failure fails the job so it shows as a red check. To recover from a lookup failure, re-run the failed post job (`post-plan` / `post-run`) from the workflow run page (artifacts are retained for 1 day); if it still cannot be recovered, comment `$terraform plan` on the PR. The `$terraform plan` fallback does not apply to a cleanup-only run (a push that left no changed Terraform roots), because that command finds no targets and posts nothing, so re-run the `post-plan` job instead. A residual check-then-act race window remains if the PR head changes after this check. The guard only compares PR heads, so an older run on the same PR head (for example, a re-run of an earlier attempt or a run with a different merge commit) can still replace a newer run's comment; consumers should read the `merge_commit` and `run` fields of the stamp to judge which run produced the comment. Unstamped plan comments from earlier runs are replaced on the next verified current run.
 
+Callers that run outside a `pull_request` or `issue_comment` event (for example a workflow of your own started with `workflow_dispatch`) can pass these `post-comment.mjs` options:
+
+- `issueNumber`: the pull request number to read, delete and post comments on, and to run the freshness check against. It must be a positive integer; otherwise the script fails without writing anything. By default the number comes from the event context.
+- `artifactRoot`: the directory that holds the downloaded result artifacts (default `plans` for plan, `applies` for apply, relative to the working directory). Download them outside the checkout when the checked-out code is not trusted, because files committed in the repository could otherwise be read as results.
+
+When `expectedPaths` is given, results for any other path are ignored with a warning, and a path with more than one result is reported as failed.
+
 ## GitHub Scripts CLI
 
 A CLI tool designed to manage Terraform operations within a monorepo structure, located in `.github/tfman/cli`. It is implemented in Node.js and integrates seamlessly with GitHub Actions.
