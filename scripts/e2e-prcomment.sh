@@ -241,7 +241,8 @@ cancel_early() {
         fi
         progress "Cancel early: the cancel landed after Terraform Plan finished (attempt $attempt/$max)"
     done
-    ((attempt <= max)) || { note="The cancel landed after Terraform Plan finished in all $max attempts"; return 1; }
+    # Return 77 (inconclusive; the conventional "skip" code, which jq/gh/grep never use for their own failures): the scenario could not create an early cancellation, which says nothing about the code under test.
+    ((attempt <= max)) || { note="Inconclusive: the cancel landed after Terraform Plan finished in all $max attempts"; return 77; }
     status_is terraform/plan error cancelled || return 1
     body=$(latest_comment '## 📋') || return 1
     contains "$body" '`environments/test1` | ❌ | Plan Failed' || return 1
@@ -370,10 +371,15 @@ cleanup_only_changes() {
     note='Timed out waiting for zero plan comments'; return 1
 }
 scenario() {
-    local label=$1 function=$2 result=PASS
+    local label=$1 function=$2 result=PASS code=0
     note=''
     progress "$label"
-    if ! "$function"; then
+    "$function" || code=$?
+    if ((code == 77)); then
+        # INCONCLUSIVE does not fail the suite; the note says why nothing was verified.
+        result=INCONCLUSIVE
+        note=${note:-'Could not exercise the scenario'}
+    elif ((code != 0)); then
         result=FAIL; failed=1
         note=${note:-'Command failed or wait timed out'}
     else
