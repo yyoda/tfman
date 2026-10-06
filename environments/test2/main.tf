@@ -14,8 +14,3 @@ output "result" {
   description = "Result of the main module"
   value       = module.main
 }
-
-
-resource "null_resource"   "broken" {
-    triggers   = { name="broken" }
-}
