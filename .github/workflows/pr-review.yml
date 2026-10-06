@@ -11,15 +11,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions: {}
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
 
 env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
   detect-changes:
-    permissions:
-      contents: read
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -44,9 +45,6 @@ jobs:
             | node .github/tfman/gh-scripts/write-outputs.mjs matrix
 
   plan:
-    permissions:
-      contents: read
-      id-token: write
     needs: detect-changes
     if: needs.detect-changes.outputs.has-changes == 'true'
     runs-on: ubuntu-latest
@@ -218,9 +216,6 @@ jobs:
             --format=compact
 
   post-plan:
-    permissions:
-      contents: read
-      pull-requests: write
     needs: [detect-changes, plan]
     runs-on: ubuntu-latest
     if: ${{ !cancelled() && needs.detect-changes.result == 'success' }}

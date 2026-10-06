@@ -134,8 +134,6 @@ Callers that run outside a `pull_request` or `issue_comment` event (for example 
 
 When `expectedPaths` is given, results for any other path are ignored with a warning, and a path with more than one result is reported as failed.
 
-PRReview runs each job with its own token permissions (`detect-changes`: `contents: read`; `plan`: `contents: read` and `id-token: write`; `post-plan`: `contents: read` and `pull-requests: write`) instead of one set for the whole workflow.
-
 ## GitHub Scripts CLI
 
 A CLI tool designed to manage Terraform operations within a monorepo structure, located in `.github/tfman/cli`. It is implemented in Node.js and integrates seamlessly with GitHub Actions.
