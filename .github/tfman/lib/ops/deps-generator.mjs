@@ -145,9 +145,15 @@ async function extractModules(rootAbs, workspaceRoot, repoIdentity, logs, runCom
       return null;
     }
 
-    const modulesRaw = Array.isArray(data?.Modules) ? data.Modules : data?.modules;
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+      logs.push(`❌ Unexpected 'terraform modules' output in ${rootAbs}: expected a JSON object`);
+      return null;
+    }
+
+    // A root without module calls has no modules key at all, which means "no modules".
+    const modulesRaw = data.Modules ?? data.modules ?? [];
     if (!Array.isArray(modulesRaw)) {
-      logs.push(`❌ Unexpected 'terraform modules' output in ${rootAbs}: missing modules array`);
+      logs.push(`❌ Unexpected 'terraform modules' output in ${rootAbs}: modules is not an array`);
       return null;
     }
     const modulesSet = new Set();
