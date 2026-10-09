@@ -217,6 +217,7 @@ for (const [name, options] of [
   ['an empty object', { modules: '{}' }],
   ['only format_version', { modules: '{"format_version":"1.0"}' }],
   ['an empty modules array', { modules: '{"format_version":"1.0","modules":[]}' }],
+  ['a null modules value', { modules: '{"format_version":"1.0","modules":null}' }],
   ['a null Modules value', { modules: '{"Modules":null}' }],
   ['an empty manifest', { modules: new Error('no command named "modules"'), manifest: '{}' }],
 ]) {
