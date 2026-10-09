@@ -197,17 +197,35 @@ describe('lib/ops/deps-generator', () => {
   });
 });
 
-for (const [name, options] of [
+for (const [name, options, expectedLog] of [
   ['generic command failure with a manifest', { modules: new Error('Command failed: terraform\nInitialization required'), manifest: modulesJson }],
-  ['missing modules array in command output', { modules: '{}' }],
-  ['missing modules array in manifest', { modules: new Error('no command named "modules"'), manifest: '{}' }],
+  ['non-array modules in command output', { modules: '{"modules":"net"}' }, 'modules is not an array'],
+  ['non-array modules in manifest', { modules: new Error('no command named "modules"'), manifest: '{"Modules":{}}' }, 'modules is not an array'],
+  ['non-object command output', { modules: '[]' }, 'expected a JSON object'],
+  ['null command output', { modules: 'null' }, 'expected a JSON object'],
 ]) {
   it(`fails for ${name}`, async t => {
     const result = await analyze(t, options);
     assert.equal(result.status, 'failure');
     assert.ok(result.logs.some(log => log.startsWith('❌')));
-    if (name.startsWith('missing')) assert.ok(result.logs.some(log => log.includes('missing modules array')));
+    if (expectedLog) assert.ok(result.logs.some(log => log.includes(expectedLog)));
     else assert.ok(result.logs.every(log => !log.includes('unavailable')));
+  });
+}
+
+for (const [name, options] of [
+  ['an empty object', { modules: '{}' }],
+  ['only format_version', { modules: '{"format_version":"1.0"}' }],
+  ['an empty modules array', { modules: '{"format_version":"1.0","modules":[]}' }],
+  ['a null modules value', { modules: '{"format_version":"1.0","modules":null}' }],
+  ['a null Modules value', { modules: '{"Modules":null}' }],
+  ['an empty manifest', { modules: new Error('no command named "modules"'), manifest: '{}' }],
+]) {
+  it(`treats ${name} as a root without modules`, async t => {
+    const result = await analyze(t, options);
+    assert.equal(result.status, 'success');
+    assert.deepEqual(result.modules, []);
+    assert.deepEqual(result.providers, [provider]);
   });
 }
 
