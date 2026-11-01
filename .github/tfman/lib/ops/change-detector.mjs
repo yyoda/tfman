@@ -1,4 +1,5 @@
 
+import { parseDeclarations, matchFile, expandSelector } from './file-deps.mjs';
 import { join } from 'node:path';
 import { getWorkspaceRoot, loadJson, assertSafeRootPath } from '../utils.mjs';
 import { runGitDiff } from '../git.mjs';
@@ -11,6 +12,7 @@ import { runGitDiff } from '../git.mjs';
  * @returns {Array<{path: string, providers: string[]}>} - List of roots to execute.
  */
 export function calculateExecutionPaths(changedFiles, depsData) {
+  const fileEdges = depsData.files === undefined ? [] : parseDeclarations({ files: depsData.files });
   const dirsData = depsData.dirs || [];
   const modulesData = depsData.modules || [];
 
@@ -62,6 +64,19 @@ export function calculateExecutionPaths(changedFiles, depsData) {
   for (const changedModule of changedModules) {
     for (const consumer of moduleUsageMap.get(changedModule)) {
       affectedRoots.add(consumer);
+    }
+  }
+
+  for (const file of changedFiles) {
+    if (file === '.tfdeps.json' || file === '.tfdepsextra.json') continue;
+    for (const edge of fileEdges) {
+      if (matchFile(edge.path, file)) {
+        for (const selector of edge.usedIn) {
+          for (const consumer of expandSelector(selector, [...rootProviders.keys()])) {
+            affectedRoots.add(consumer);
+          }
+        }
+      }
     }
   }
 

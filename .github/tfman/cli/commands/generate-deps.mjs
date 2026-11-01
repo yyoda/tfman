@@ -1,3 +1,4 @@
+import { loadDeclarations as defaultLoadDeclarations, parseDeclarations, expandSelector } from '../../lib/ops/file-deps.mjs';
 import { join, resolve } from 'node:path';
 import { runCommand as defaultRunCommand, getWorkspaceRoot as defaultGetWorkspaceRoot } from '../../lib/utils.mjs';
 import { logger as defaultLogger } from '../../lib/logger.mjs';
@@ -14,6 +15,7 @@ export async function run(args, dependencies = {}) {
     runCommand = defaultRunCommand,
     getWorkspaceRoot = defaultGetWorkspaceRoot,
     logger = defaultLogger,
+    loadFileDeclarations = defaultLoadDeclarations,
     writeFile = defaultWriteFile
   } = dependencies;
 
@@ -76,6 +78,18 @@ export async function run(args, dependencies = {}) {
       usedIn: moduleUsage.get(mod).sort()
     }))
   };
+
+  const files = parseDeclarations({ files: await loadFileDeclarations(root) })
+    .sort((a, b) => a.path.localeCompare(b.path));
+  const rootPaths = rootObjects.map(item => item.path);
+  for (const file of files) {
+    for (const selector of file.usedIn) {
+      if (expandSelector(selector, rootPaths).length === 0) {
+        logger.warning(`File dependency ${file.path}: selector ${selector} matches no roots`);
+      }
+    }
+  }
+  if (files.length > 0) outputObject.files = files;
 
   const outputPath = output || join(root, '.tfdeps.json');
   await writeFile(outputPath, JSON.stringify(outputObject, null, 2) + '\n');
