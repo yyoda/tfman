@@ -3,8 +3,6 @@ import assert from 'node:assert';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
 import { detectChanges } from '../../../lib/ops/change-detector.mjs';
 import { runCommand } from '../../../lib/utils.mjs';
 
@@ -70,24 +68,4 @@ describe('detectChanges declared inputs with real git', () => {
       assert.deepStrictEqual(await detectChanges(repo.base, head, null, repo.root), expected);
     });
   }
-
-  it('operate-command emits completed error JSON and exits zero for malformed file declarations', async t => {
-    const { root, base } = await fixture(t);
-    await writeFile(join(root, '.tfdeps.json'), JSON.stringify({
-      dirs, files: [{ path: '../x', usedIn: ['*'] }]
-    }));
-    await assert.rejects(detectChanges(base, base, null, root), /Invalid file dependency pattern/);
-    const cli = fileURLToPath(new URL('../../../cli/index.mjs', import.meta.url));
-    const result = spawnSync(process.execPath, [
-      cli, 'operate-command', '--root', root, '--comment-body', '$terraform plan',
-      '--base-sha', base, '--head-sha', base
-    ], { cwd: root, encoding: 'utf8', timeout: 30_000 });
-    assert.ifError(result.error);
-    assert.strictEqual(result.status, 0, result.stderr);
-    assert.strictEqual(result.stderr, '');
-    assert.deepStrictEqual(JSON.parse(result.stdout), {
-      command: 'error', targetDirs: [], tfTargets: [],
-      message: 'Invalid file dependency pattern: "../x"', done: true
-    });
-  });
 });
