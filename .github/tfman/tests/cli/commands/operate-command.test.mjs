@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { run } from '../../../cli/commands/operate-command.mjs';
+import { calculateExecutionPaths } from '../../../lib/ops/change-detector.mjs';
 
 describe('cli/commands/operate-command', () => {
 
@@ -150,6 +151,22 @@ describe('cli/commands/operate-command', () => {
 
       assert.strictEqual(result.command, 'error');
       assert.strictEqual(result.message, 'Git Error');
+    });
+
+    it('should return a completed error when the graph has malformed file declarations', async () => {
+      const _parseCommand = () => ({ command: 'plan', targetDirs: [], tfTargets: [] });
+      // Real graph validation, so the message is the one detect-changes would raise.
+      const _detectChanges = async () => calculateExecutionPaths([], {
+        dirs: [{ path: 'env/x', providers: [] }],
+        files: [{ path: '../x', usedIn: ['*'] }]
+      });
+
+      const result = await run({ ...baseArgs }, { _detectChanges, _parseCommand });
+
+      assert.deepStrictEqual(result, {
+        command: 'error', targetDirs: [], tfTargets: [],
+        message: 'Invalid file dependency pattern: "../x"', done: true
+      });
     });
   });
 });

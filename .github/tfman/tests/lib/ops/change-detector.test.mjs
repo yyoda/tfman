@@ -115,3 +115,56 @@ describe('detect-changes', () => {
         deepStrictEqual(result, []);
     });
 });
+
+describe('declared input changes', () => {
+  const dirs = ['envs/hoge/dev', 'envs/hoge/stage', 'envs/hoge/prod', 'envs/hoge/dev/aoai', 'other']
+    .map(path => ({ path, providers: ['aws'] }));
+  it('selects every root with equivalent star and double-star selectors', () => {
+    for (const selector of ['*', '**']) {
+      deepStrictEqual(calculateExecutionPaths(['officeIPs.json'], {
+        dirs, files: [{ path: 'officeIPs.json', usedIn: [selector] }]
+      }), dirs);
+    }
+  });
+  it('matches changed paths with spaces and Japanese characters without declaration validation', () => {
+    for (const path of ['dir/with spaces.json', 'dir/日本語.json', 'dir/日本語 ファイル.json']) {
+      for (const pattern of ['**', 'dir/']) {
+        deepStrictEqual(calculateExecutionPaths([path], {
+          dirs, files: [{ path: pattern, usedIn: ['envs/hoge/*'] }]
+        }), dirs.slice(0, 3));
+      }
+    }
+  });
+  it('selects the declared consumers for both external file cases', () => {
+    const files = [
+      { path: 'envs/hoge/hoge.json', usedIn: ['envs/hoge/*'] },
+      { path: 'officeIPs.json', usedIn: ['*'] }
+    ];
+    deepStrictEqual(calculateExecutionPaths(['envs/hoge/hoge.json'], { dirs, files }), dirs.slice(0, 3));
+    deepStrictEqual(calculateExecutionPaths(['officeIPs.json'], { dirs, files }), dirs);
+  });
+  it('unions all file edges, root and module matches with providers and no duplicates', () => {
+    const files = [
+      { path: 'envs/hoge/dev/*.json', usedIn: ['other', 'envs/hoge/dev'] },
+      { path: 'envs/**', usedIn: ['envs/hoge/stage'] }
+    ];
+    const modules = [{ source: 'envs/hoge/dev', usedIn: ['envs/hoge/prod'] }];
+    deepStrictEqual(calculateExecutionPaths(['envs/hoge/dev/deleted.json'], { dirs, files, modules }),
+      [dirs[0], dirs[2], dirs[4], dirs[1]]);
+  });
+  it('ignores declaration-only changes and unknown or excluded consumers', () => {
+    deepStrictEqual(calculateExecutionPaths(['.tfdeps.json', '.tfdepsextra.json'], {
+      dirs, files: [{ path: '**', usedIn: ['*'] }]
+    }), []);
+    deepStrictEqual(calculateExecutionPaths(['deleted.json'], {
+      dirs, files: [{ path: '**', usedIn: ['excluded', 'missing/*'] }]
+    }), []);
+  });
+  it('validates file edges even without changes and preserves legacy behavior', () => {
+    for (const files of [null, {}, [{ path: '../x', usedIn: ['*'] }]]) {
+      throws(() => calculateExecutionPaths([], { dirs, files }));
+    }
+    const changes = ['envs/hoge/dev/main.tf'];
+    deepStrictEqual(calculateExecutionPaths(changes, { dirs, files: [] }), calculateExecutionPaths(changes, { dirs }));
+  });
+});
