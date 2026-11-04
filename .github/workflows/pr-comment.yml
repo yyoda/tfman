@@ -50,6 +50,7 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       tf_targets_json: ${{ steps.set-matrix.outputs.tf_targets_json }}
       head_sha: ${{ steps.pr-details.outputs.head_sha }}
+      base_ref: ${{ steps.pr-details.outputs.base_ref }}
       done: ${{ steps.set-matrix.outputs.done }}
     steps:
 
@@ -69,10 +70,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Get PR info (baseRefOid, headRefOid)
-          PR_DATA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json baseRefOid,headRefOid)
+          # Get PR info (baseRefOid, headRefOid, baseRefName)
+          PR_DATA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json baseRefOid,headRefOid,baseRefName)
           echo "base_sha=$(echo "$PR_DATA" | jq -r .baseRefOid)" >> "$GITHUB_OUTPUT"
           echo "head_sha=$(echo "$PR_DATA" | jq -r .headRefOid)" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$(echo "$PR_DATA" | jq -r .baseRefName)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v5
         with:
@@ -86,6 +88,13 @@ jobs:
           git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
           git cat-file -e "${HEAD_SHA}^{commit}"
 
+      - name: Fetch Base Branch
+        env:
+          BASE_REF: ${{ steps.pr-details.outputs.base_ref }}
+        run: |
+          # Do not rely on the API's baseRefOid, which is not guaranteed to be the base tip.
+          git fetch --no-tags origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
@@ -96,6 +105,7 @@ jobs:
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
           BASE_SHA: ${{ steps.pr-details.outputs.base_sha }}
+          BASE_REF: ${{ steps.pr-details.outputs.base_ref }}
           HEAD_SHA: ${{ steps.pr-details.outputs.head_sha }}
           ROLES: ${{ needs.authorize.outputs.roles }}
           ACTOR: ${{ github.event.comment.user.login }}
@@ -107,6 +117,7 @@ jobs:
           node .github/tfman/cli/index.mjs operate-command \
             --comment-body "$COMMENT_BODY" \
             --base-sha "$BASE_SHA" \
+            --base-ref "$BASE_REF" \
             --head-sha "$HEAD_SHA" \
             --roles "$ROLES" \
             --actor "$ACTOR" \
@@ -240,6 +251,8 @@ jobs:
         if: needs.setup.outputs.command == 'apply'
         id: apply
         env:
+          BASE_REF: ${{ needs.setup.outputs.base_ref }}
+          HEAD_SHA: ${{ needs.setup.outputs.head_sha }}
           ROLES: ${{ needs.authorize.outputs.roles }}
           ACTOR: ${{ github.event.comment.user.login }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
@@ -254,6 +267,9 @@ jobs:
             echo "User $ACTOR does not have permission to apply. Required role: applier."
             exit 1
           fi
+          # re-check in case base advanced since the setup job; same role as the role re-checks above
+          git fetch --no-tags --depth=2147483647 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" "$HEAD_SHA"
+          node "$GITHUB_WORKSPACE/.github/tfman/cli/index.mjs" check-base-ancestry --base-ref "$BASE_REF" --head-sha "$HEAD_SHA"
           TARGET_FLAGS=()
           if [ "$TF_TARGETS_JSON" != "[]" ]; then
             while IFS= read -r addr; do

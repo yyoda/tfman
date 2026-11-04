@@ -200,3 +200,68 @@ describe('operate-command roles', () => {
     });
   }
 });
+
+describe('operate-command base ancestry', () => {
+  const args = { 'comment-body': '$terraform apply', 'base-sha': 'base', 'head-sha': 'head', 'base-ref': 'release/1.x', root: '/workspace' };
+  const targets = [{ path: 'env/x' }];
+
+  for (const explicit of [false, true]) {
+    it(`rejects stale apply before target resolution (explicit: ${explicit})`, async () => {
+      let targetCalls = 0;
+      const resolve = async () => { targetCalls++; return targets; };
+      const result = await run(args, {
+        _parseCommand: () => ({ command: 'apply', targetDirs: explicit ? ['env/x'] : [], tfTargets: explicit ? ['module.x'] : [] }),
+        _getBaseBranchLag: async (...actual) => {
+          assert.deepStrictEqual(actual, ['release/1.x', 'head', '/workspace']);
+          return { upToDate: false, behindBy: 2 };
+        },
+        _detectChanges: resolve, _selectTargets: resolve,
+      });
+      assert.strictEqual(result.done, true);
+      assert.strictEqual(result.command, 'apply');
+      assert.deepStrictEqual(result.targetDirs, []);
+      assert.deepStrictEqual(result.tfTargets, []);
+      assert.match(result.message, /2 commits behind `release\/1.x`/);
+      assert.match(result.message, /Update branch/);
+      assert.match(result.message, /\$terraform apply/);
+      assert.strictEqual(targetCalls, 0);
+    });
+  }
+  it('continues apply when up to date', async () => {
+    const result = await run(args, { _getBaseBranchLag: async () => ({ upToDate: true, behindBy: 0 }), _detectChanges: async () => targets });
+    assert.strictEqual(result.done, false);
+    assert.deepStrictEqual(result.targetDirs, targets);
+  });
+  for (const command of ['plan', 'apply']) {
+    it(`skips the check for ${command === 'plan' ? 'plan' : 'apply without base-ref'}`, async () => {
+      let calls = 0;
+      const input = { ...args, 'comment-body': `$terraform ${command}` };
+      if (command === 'apply') delete input['base-ref'];
+      const result = await run(input, {
+        _getBaseBranchLag: async () => { calls++; return { upToDate: false, behindBy: 2 }; },
+        _detectChanges: async () => targets,
+      });
+      assert.strictEqual(calls, 0);
+      assert.strictEqual(result.done, false);
+      assert.strictEqual(result.command, command);
+    });
+  }
+  it('fails closed on lookup errors', async () => {
+    const result = await run(args, { _getBaseBranchLag: async () => { throw new Error('Lookup failed'); } });
+    assert.deepStrictEqual(result, { command: 'apply', done: true, targetDirs: [], tfTargets: [], message: 'Lookup failed' });
+  });
+  it('fails closed on an empty base-ref', async () => {
+    const result = await run({ ...args, 'base-ref': '' });
+    assert.strictEqual(result.done, true);
+    assert.strictEqual(result.command, 'apply');
+    assert.match(result.message, /non-empty string/);
+  });
+  it('keeps role denial ahead of ancestry lookup', async () => {
+    let calls = 0;
+    const result = await run({ ...args, roles: '["planner"]', actor: 'someone' }, {
+      _getBaseBranchLag: async () => { calls++; },
+    });
+    assert.strictEqual(calls, 0);
+    assert.deepStrictEqual(result, { command: 'apply', done: true, targetDirs: [], tfTargets: [], message: 'User someone does not have permission to apply. Required role: applier.' });
+  });
+});

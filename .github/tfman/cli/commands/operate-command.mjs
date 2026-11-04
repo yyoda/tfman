@@ -2,6 +2,7 @@ import { detectChanges } from '../../lib/ops/change-detector.mjs';
 import { selectTargets } from '../../lib/ops/target-selector.mjs';
 import { parseCommand } from '../../lib/ops/command-parser.mjs';
 import { requireArgs } from '../../lib/utils.mjs';
+import { getBaseBranchLag, baseBranchLagMessage } from '../../lib/git.mjs';
 
 // Completed commands never schedule roots or pass resource targets downstream.
 function completedResult(message, command = 'error') {
@@ -13,6 +14,7 @@ export async function run(args, dependencies = {}) {
     _detectChanges = detectChanges,
     _selectTargets = selectTargets,
     _parseCommand = parseCommand,
+    _getBaseBranchLag = getBaseBranchLag,
   } = dependencies;
 
   requireArgs(args, ['comment-body', 'base-sha', 'head-sha']);
@@ -45,6 +47,17 @@ export async function run(args, dependencies = {}) {
       return completedResult(
         `User ${args.actor} does not have permission to apply. Required role: applier.`, 'apply'
       );
+    }
+  }
+  // Opt-in: omitting --base-ref preserves the existing apply behavior.
+  if (command === 'apply' && args['base-ref'] !== undefined) {
+    try {
+      const { upToDate, behindBy } = await _getBaseBranchLag(args['base-ref'], headSha, args.root);
+      if (!upToDate) {
+        return completedResult(baseBranchLagMessage(args['base-ref'], behindBy), 'apply');
+      }
+    } catch (error) {
+      return completedResult(error.message, 'apply');
     }
   }
   let targetDirs = [];

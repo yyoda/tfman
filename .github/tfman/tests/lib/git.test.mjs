@@ -8,7 +8,9 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { runGitDiff, normalizeRepoIdentity } from '../../lib/git.mjs';
+import { fileURLToPath } from 'node:url';
+
+import { runGitDiff, normalizeRepoIdentity, getBaseBranchLag, baseBranchLagMessage } from '../../lib/git.mjs';
 import { runCommand } from '../../lib/utils.mjs';
 
 describe('runGitDiff', () => {
@@ -135,4 +137,76 @@ describe('normalizeRepoIdentity', () => {
   for (const url of [null, '', 'repo', 'github.com/repo', 'https://github.com/org']) {
     it(`rejects ${url}`, () => assert.strictEqual(normalizeRepoIdentity(url), null));
   }
+});
+
+describe('getBaseBranchLag', () => {
+  let repoDir;
+  let initial;
+  let head;
+  let merged;
+  const git = (...args) => runCommand('git', args, { cwd: repoDir });
+
+  before(async () => {
+    repoDir = await mkdtemp(join(tmpdir(), 'tfman-ancestry-'));
+    await git('init', '-q', '-b', 'base');
+    await git('config', 'user.name', 'Test User');
+    await git('config', 'user.email', 'test@example.com');
+    await git('commit', '--allow-empty', '-qm', 'Initial');
+    initial = (await git('rev-parse', 'HEAD')).stdout;
+    await git('checkout', '-qb', 'feature');
+    await git('commit', '--allow-empty', '-qm', 'Feature');
+    head = (await git('rev-parse', 'HEAD')).stdout;
+    await git('checkout', '-q', 'base');
+    await git('commit', '--allow-empty', '-qm', 'Base one');
+    await git('commit', '--allow-empty', '-qm', 'Base two');
+    const tip = (await git('rev-parse', 'HEAD')).stdout;
+    for (const name of ['main', 'release/1.x']) {
+      await git('update-ref', `refs/remotes/origin/${name}`, tip);
+    }
+    // A similarly named local branch must not shadow the fully qualified ref.
+    await git('branch', 'origin/main', head);
+    await git('checkout', '-q', 'feature');
+    await git('merge', '--no-ff', '-qm', 'Merge base', 'base');
+    merged = (await git('rev-parse', 'HEAD')).stdout;
+  });
+
+  after(async () => {
+    if (repoDir) await rm(repoDir, { recursive: true, force: true });
+  });
+
+  it('accepts a head containing the base tip', async () => {
+    assert.deepStrictEqual(await getBaseBranchLag('main', 'base', repoDir), { upToDate: true, behindBy: 0 });
+  });
+  for (const name of ['main', 'release/1.x']) {
+    it(`counts missing base commits for ${name}`, async () => {
+      for (const sha of [head, initial]) {
+        assert.deepStrictEqual(await getBaseBranchLag(name, sha, repoDir), { upToDate: false, behindBy: 2 });
+      }
+    });
+  }
+  it('accepts a merge commit containing base', async () => {
+    assert.deepStrictEqual(await getBaseBranchLag('main', merged, repoDir), { upToDate: true, behindBy: 0 });
+  });
+  it('rejects unknown base and head refs', async () => {
+    await assert.rejects(getBaseBranchLag('missing', head, repoDir), /Could not check base branch ancestry/);
+    await assert.rejects(getBaseBranchLag('main', 'missing', repoDir), /Could not check base branch ancestry/);
+  });
+  it('rejects empty and non-string base names', async () => {
+    for (const name of ['', ' ', null, undefined, 1]) {
+      await assert.rejects(getBaseBranchLag(name, head, repoDir), /non-empty string/);
+    }
+  });
+  it('fails closed when git cannot be started in the working directory', async () => {
+    await assert.rejects(getBaseBranchLag('main', head, join(repoDir, 'missing')), /Could not check base branch ancestry/);
+  });
+  it('runs the real CLI silently on success and exits 1 with guidance when behind', async () => {
+    const cli = fileURLToPath(new URL('../../cli/index.mjs', import.meta.url));
+    const invoke = sha => runCommand(process.execPath, [cli, 'check-base-ancestry', '--base-ref', 'release/1.x', '--head-sha', sha, '--root', repoDir], { cwd: repoDir });
+    assert.deepStrictEqual(await invoke(merged), { stdout: '', stderr: '' });
+    await assert.rejects(invoke(head), error => {
+      assert.strictEqual(error.code, 1);
+      assert.strictEqual(error.stderr, `❌ ${baseBranchLagMessage('release/1.x', 2)}`);
+      return true;
+    });
+  });
 });

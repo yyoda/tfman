@@ -2,6 +2,42 @@ import { runCommand } from './utils.mjs';
 import { logger } from './logger.mjs';
 
 /**
+ * Checks whether the PR head contains the fetched base branch tip.
+ * @param {string} baseRef - Base branch name.
+ * @param {string} headSha - PR head commit SHA.
+ * @param {string} root - Repository working directory.
+ * @returns {Promise<{upToDate: boolean, behindBy: number}>}
+ */
+export async function getBaseBranchLag(baseRef, headSha, root) {
+  if (typeof baseRef !== 'string' || !baseRef.trim()) {
+    throw new Error('Base branch name must be a non-empty string.');
+  }
+  const baseTip = `refs/remotes/origin/${baseRef}`;
+  try {
+    await runCommand('git', ['merge-base', '--is-ancestor', baseTip, headSha], { cwd: root });
+    return { upToDate: true, behindBy: 0 };
+  } catch (error) {
+    if (error.code !== 1) {
+      throw new Error(`Could not check base branch ancestry: ${error.message}`);
+    }
+  }
+  try {
+    const { stdout } = await runCommand('git', ['rev-list', '--count', `${headSha}..${baseTip}`], { cwd: root });
+    return { upToDate: false, behindBy: Number(stdout) };
+  } catch (error) {
+    throw new Error(`Could not count commits behind the base branch: ${error.message}`);
+  }
+}
+
+/** Builds the shared apply rejection message for a stale PR branch. */
+export function baseBranchLagMessage(baseRef, behindBy) {
+  return `This PR branch is ${behindBy} ${behindBy === 1 ? 'commit' : 'commits'} behind \`${baseRef}\`.\n\n`
+    + 'Apply runs against the PR head only, so applying now could revert changes already merged into the base.\n\n'
+    + `Update the branch using GitHub's "Update branch" button or by merging \`${baseRef}\` into it, `
+    + 're-check the refreshed plan, then comment `$terraform apply` again.';
+}
+
+/**
  * Runs git diff to find changed files between two commits.
  *
  * Uses three-dot diff (`base...head`), which diffs against the merge-base of
