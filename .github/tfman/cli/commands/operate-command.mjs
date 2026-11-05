@@ -2,6 +2,7 @@ import { detectChanges } from '../../lib/ops/change-detector.mjs';
 import { selectTargets } from '../../lib/ops/target-selector.mjs';
 import { parseCommand } from '../../lib/ops/command-parser.mjs';
 import { requireArgs } from '../../lib/utils.mjs';
+import { checkBaseBranch, baseBranchLagMessage, baseBranchUnverifiedMessage } from '../../lib/git.mjs';
 
 // Completed commands never schedule roots or pass resource targets downstream.
 function completedResult(message, command = 'error') {
@@ -13,6 +14,7 @@ export async function run(args, dependencies = {}) {
     _detectChanges = detectChanges,
     _selectTargets = selectTargets,
     _parseCommand = parseCommand,
+    _checkBaseBranch = checkBaseBranch,
   } = dependencies;
 
   requireArgs(args, ['comment-body', 'base-sha', 'head-sha']);
@@ -45,6 +47,19 @@ export async function run(args, dependencies = {}) {
       return completedResult(
         `User ${args.actor} does not have permission to apply. Required role: applier.`, 'apply'
       );
+    }
+  }
+  if (command === 'apply') {
+    const base = args['base-ref'];
+    const result = typeof base === 'string' && base.trim()
+      ? await _checkBaseBranch(base, headSha, args.root)
+      : { status: 'unverified', detail: '--base-ref is required for apply' };
+    if (result.status === 'stale') {
+      return completedResult(baseBranchLagMessage(base, result.behindBy), 'apply');
+    }
+    if (result.status === 'unverified') {
+      console.error(result.detail);
+      return completedResult(baseBranchUnverifiedMessage(base), 'apply');
     }
   }
   let targetDirs = [];

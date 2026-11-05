@@ -2,6 +2,68 @@ import { runCommand } from './utils.mjs';
 import { logger } from './logger.mjs';
 
 /**
+ * Refreshes the base and verifies that the pinned head contains its latest tip.
+ * @param {string} baseRef - Base branch name.
+ * @param {string} headSha - Pinned head commit SHA.
+ * @param {string} root - Repository working directory.
+ * @param {object} [dependencies] - Command runner for tests.
+ * @returns {Promise<{status:'current'} | {status:'stale', behindBy:number} | {status:'unverified', detail:string}>}
+ */
+export async function checkBaseBranch(baseRef, headSha, root, { run = runCommand } = {}) {
+  if (typeof baseRef !== 'string' || !baseRef.trim() || typeof headSha !== 'string' || !headSha.trim()) {
+    return { status: 'unverified', detail: 'Base branch name and head SHA must be non-empty strings.' };
+  }
+  const baseTip = `refs/remotes/origin/${baseRef}`;
+  try {
+    const { stdout: shallow } = await run('git', ['rev-parse', '--is-shallow-repository'], { cwd: root });
+    if (shallow !== 'true' && shallow !== 'false') {
+      return { status: 'unverified', detail: 'Could not determine whether repository history is shallow.' };
+    }
+    const fetchArgs = ['fetch', '--no-tags'];
+    if (shallow === 'true') fetchArgs.push('--unshallow');
+    fetchArgs.push('origin', `+refs/heads/${baseRef}:${baseTip}`);
+    if (shallow === 'true') fetchArgs.push(headSha);
+    await run('git', fetchArgs, { cwd: root });
+    if (shallow === 'true') {
+      const { stdout } = await run('git', ['rev-parse', '--is-shallow-repository'], { cwd: root });
+      if (stdout !== 'false') {
+        return { status: 'unverified', detail: 'Repository history is still incomplete after fetching.' };
+      }
+    }
+    try {
+      await run('git', ['merge-base', '--is-ancestor', baseTip, headSha], { cwd: root });
+      return { status: 'current' };
+    } catch (error) {
+      if (error.code !== 1) throw error;
+    }
+    const { stdout } = await run('git', ['rev-list', '--count', `${headSha}..${baseTip}`], { cwd: root });
+    const behindBy = Number(stdout);
+    if (!/^\d+$/.test(stdout) || !Number.isSafeInteger(behindBy) || behindBy <= 0) {
+      return { status: 'unverified', detail: 'Could not determine a positive number of commits behind the base branch.' };
+    }
+    return { status: 'stale', behindBy };
+  } catch (error) {
+    return { status: 'unverified', detail: `Could not verify base branch freshness: ${error?.message ?? String(error)}` };
+  }
+}
+
+/** Builds the shared apply rejection message for a stale PR branch. */
+export function baseBranchLagMessage(baseRef, behindBy) {
+  return `This PR branch is ${behindBy} ${behindBy === 1 ? 'commit' : 'commits'} behind \`${baseRef}\`.\n\n`
+    + 'Apply runs against the PR head only, so applying now could revert changes already merged into the base.\n\n'
+    + `Update the branch using GitHub's "Update branch" button or by merging \`${baseRef}\` into it, `
+    + 're-check the refreshed plan, then comment `$terraform apply` again.';
+}
+
+/** Builds the apply rejection message when base freshness is unknown. */
+export function baseBranchUnverifiedMessage(baseRef) {
+  const base = typeof baseRef === 'string' && baseRef.trim()
+    ? '`' + baseRef.replace(/[\r\n]/g, ' ') + '`' : 'the base branch';
+  return `Apply was blocked because freshness against ${base} could not be verified. `
+    + 'This does not mean the branch is behind. Check the workflow run logs and comment `$terraform apply` again.';
+}
+
+/**
  * Runs git diff to find changed files between two commits.
  *
  * Uses three-dot diff (`base...head`), which diffs against the merge-base of

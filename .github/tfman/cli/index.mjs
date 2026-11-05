@@ -5,6 +5,7 @@ import { run as runSelectTargets } from './commands/select-targets.mjs';
 import { run as runGenerateDeps } from './commands/generate-deps.mjs';
 import { run as runOperateCommand } from './commands/operate-command.mjs';
 import { run as runWriteResult } from './commands/write-result.mjs';
+import { run as runCheckBaseAncestry } from './commands/check-base-ancestry.mjs';
 
 // Commands share parsing and error handling; each declares its string options
 // and whether its return value belongs on stdout.
@@ -29,8 +30,12 @@ const commands = {
   },
   'operate-command': {
     run: runOperateCommand,
-    options: ['comment-body', 'base-sha', 'head-sha', 'roles', 'actor', 'root'],
+    options: ['comment-body', 'base-sha', 'head-sha', 'base-ref', 'roles', 'actor', 'root'],
     printResult: () => true,
+  },
+  'check-base-ancestry': {
+    run: runCheckBaseAncestry,
+    options: ['base-ref', 'head-sha', 'root'],
   },
 };
 
