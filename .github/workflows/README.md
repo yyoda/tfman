@@ -47,11 +47,11 @@ This document consolidates the documentation for GitHub Actions Workflows and th
     - Apply requires both the comment author and the person who runs or re-runs the workflow (`github.triggering_actor`) to be listed in `APPLIERS`.
     - **Execution User Restriction**: Users not listed in `APPLIERS` can run `plan` but `apply` is blocked.
     - Command parsing and target resolution run with the tfman scripts from the repository's default branch. Terraform itself runs against the PR head commit SHA resolved at the start of the run (the same SHA the commit status is reported on), so a push to the PR branch during the run cannot change what gets planned or applied. Unauthorized `apply` requests are rejected before any cloud credentials are configured.
-    - **Stale branch guard (`apply` only)**: PRReview plans against `refs/pull/<n>/merge` (base + PR), but `$terraform apply` runs against the PR head alone. If the PR branch is behind its base branch, the two would run different code, and changes already applied from the base would be reverted. To prevent this, `apply` is rejected unless the PR head contains the latest tip of the PR's base branch (`git merge-base --is-ancestor origin/<base> <head>`).
-        - The base branch name comes from the PR's `baseRefName` (nothing is hard-coded to `main`). The `setup` job fetches the base branch explicitly instead of trusting the API's `baseRefOid`, which is not guaranteed to be the base tip.
-        - A rejected `apply` posts a comment with the base branch, the number of commits the PR is behind, and instructions to update the branch (GitHub's **Update branch** button, or merge the base branch in) and re-check the refreshed plan before applying again. No `terraform/apply` commit status is set, and the `run` job is skipped, so no cloud credentials are configured and Terraform is never initialized.
-        - A branch that already merged the base (merge commit) counts as up to date. Target options (`$terraform apply <root> -target=...`) do not bypass the check. `$terraform plan` is unaffected and still runs on stale branches.
-        - The `run` job repeats the check right before `terraform apply` and fails the step if the base advanced after `setup` ran (same role as the `APPLIERS` re-check).
+    - **Stale branch guard (`apply` only)**: PRReview plans against base + PR, while apply uses the PR head. Apply requires that head to contain the latest base tip, so it cannot accidentally revert changes already merged into base.
+        - `operate-command` fetches the PR's `baseRefName` and completes shallow history before comparing ancestry. Up to date proceeds; confirmed stale is blocked with the missing commit count and update/plan guidance; unverifiable freshness fails closed with retry guidance without claiming the branch is behind. Setup rejection skips the run job and sets no `terraform/apply` commit status.
+        - `$terraform plan` is unaffected. A merge commit containing the base counts as up to date; explicit targets and `-target` do not bypass the check.
+        - The run job calls `check-base-ancestry` to repeat the same refresh and check immediately before apply. A failed refresh or missing CLI (including a PR head predating this feature) blocks apply. The check is not atomic with apply: the base can advance after it succeeds.
+        - This guard prevents accidents; it is not a security boundary. The run job executes PR-controlled content, including this CLI from the PR head checkout, the PR's `.env`, and Terraform itself.
     - **Operating rule: merge right after a successful `apply`.** The guard cannot detect another PR that was applied but not yet merged; applying a different PR in that window reverts the first PR's changes. Merge each PR as soon as its `apply` succeeds.
     - Cancelled runs report an `error` commit status and a comment with ❌ rows for roots that produced no artifact, subject to the plan freshness guard described below.
 
@@ -266,12 +266,13 @@ Parses a PR command comment (e.g., `$terraform apply app/dev`) and prepares the 
 node .github/tfman/cli/index.mjs operate-command \
   --comment-body "<body>" \
   --base-sha <sha> \
-  --head-sha <sha>
+  --head-sha <sha> \
+  --base-ref <base-branch>
 ```
 
 - `--roles`: Optional JSON array of roles. `apply` requires the string `"applier"`; invalid JSON or a non-array is treated as no roles. Omitting this option preserves behavior without a role gate. `plan` is unaffected.
 - `--actor`: Optional login used in the permission-denied message.
-- `--base-ref`: Optional base branch name of the PR (`baseRefName`). When given, `apply` is rejected with `done: true` unless `--head-sha` contains the tip of `refs/remotes/origin/<base-ref>`, which the caller must have fetched beforehand. The check runs after the role check and before target selection, so explicit targets and `-target` do not bypass it. An empty value or a ref that cannot be resolved is also rejected (fail closed). `plan` is unaffected, and omitting this option preserves behavior without the stale branch gate.
+- `--base-ref`: PR base branch name (`baseRefName`), **required for `apply`**. Missing or blank values return `done: true` with a could-not-verify rejection. The CLI fetches the latest base tip and completes shallow history before checking whether `--head-sha` contains it. Confirmed stale branches receive the missing commit count; fetch or verification failures receive a could-not-verify message with details only on stderr. The check runs after the role check and before target selection, so explicit targets and `-target` do not bypass it. `plan` and `help` do not require this option.
 
 **Output contract:** the command always prints a single JSON object to stdout and exits 0, even when the comment is invalid or no targets match — the workflow reads `done` and `message` to decide whether to post a reply instead of relying on the exit code:
 
@@ -303,18 +304,18 @@ Always writes `info.json` in the working directory with `path` and normalized `o
 
 #### 6. `check-base-ancestry`
 
-Fails unless a commit contains the latest tip of a base branch. PRComment's `run` job calls it right before `terraform apply` as the second layer of the stale branch guard.
+Thin adapter over the same base refresh and ancestry check used by `operate-command`. PRComment's `run` job calls it immediately before `terraform apply` to detect base changes since setup.
 
 ```bash
 node <path-to>/.github/tfman/cli/index.mjs check-base-ancestry \
   --base-ref <base-branch> --head-sha <sha>
 ```
 
-- `--base-ref`: Required base branch name. Compared as `refs/remotes/origin/<base-ref>`, which the caller must have fetched with the full history of both sides (a shallow clone gives false "behind" results).
+- `--base-ref`: Required base branch name. The CLI refreshes `refs/remotes/origin/<base-ref>` and completes shallow history for the base and pinned head before comparing them.
 - `--head-sha`: Required commit to check.
 - `--root`: Optional repository root (defaults to the current directory).
 
-Exits 0 and prints nothing when the commit contains the base tip. Otherwise (behind, or the ref cannot be resolved) it exits 1 with the same message that `operate-command` posts to the PR.
+Exits 0 and prints nothing when the commit contains the base tip. Otherwise it exits 1 with one of the same messages `operate-command` uses: the stale-branch message (confirmed behind, with the commit count), or the could-not-verify message when the ref cannot be resolved or git fails (details on stderr; it never claims the branch is behind).
 
 ### Configuration Files
 

@@ -5,13 +5,14 @@ usage() {
     printf '%s\n' 'Usage: e2e-prcomment.sh [options]' \
         'Maintainer-run PRReview/PRComment test on the current repository.' \
         '  --base <branch>     Base branch (default: main)' \
-        '  --keep              Keep the temporary draft PR and remote branch' \
+        '  --keep              Keep temporary draft PRs and remote branches' \
         '  --toggle-appliers   Temporarily set APPLIERS to [] and test denial' \
         '  --cleanup-only      Test cleanup-only changes as the last scenario' \
         '  --skip-apply        Skip authorized apply' \
         '  --timeout <seconds> Timeout per wait (default: 900)' \
         '  -h, --help          Show usage without accessing Git or the network' \
         'Checks plan provenance stamps, post-job reruns, and stale reruns.' \
+        'Stale apply creates a second draft PR and temporary e2e/stale-base-* branch.' \
         'Run against main after the feature is merged, in one sitting: artifacts are retained 1 day.'
 }
 die() { printf '==> %s\n' "$*" >&2; exit 1; }
@@ -41,7 +42,7 @@ git remote get-url origin >/dev/null || die 'The origin remote is required'
 original=$(git symbolic-ref --short HEAD) || die 'Check out a branch before running this script'
 repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 branch="e2e/prcomment-$(date -u +%Y%m%dT%H%M%SZ)"
-pr='' created=false restore=false saved_appliers='' failed=0 note=''
+pr='' created=false restore=false saved_appliers='' failed=0 note='' stale_pr='' stale_base='' stale_branch='' stale_base_created=false stale_head_created=false
 first_head='' first_review_run='' broken_review_run='' broken_snapshot='' rerun_snapshot='' marker_created=false
 results=()
 restore_appliers() {
@@ -54,8 +55,18 @@ cleanup() {
     local code=$?
     trap - EXIT INT TERM
     restore_appliers || { progress 'FAILED to restore APPLIERS; restore it manually'; code=1; }
-    if [[ -n $pr ]] && ! "$keep"; then
-        gh pr close "$pr" --repo "$repo" --delete-branch || code=1
+    if ! "$keep"; then
+        if [[ -n $stale_pr ]]; then
+            gh pr close "$stale_pr" --repo "$repo" --delete-branch || code=1
+        elif "$stale_head_created"; then
+            git push origin --delete "$stale_branch" || code=1
+        fi
+        if "$stale_base_created"; then
+            git push origin --delete "$stale_base" || code=1
+        fi
+    fi
+    if [[ -n ${cleanup_pr:-$pr} ]] && ! "$keep"; then
+        gh pr close "${cleanup_pr:-$pr}" --repo "$repo" --delete-branch || code=1
     fi
     if "$created"; then
         if "$marker_created"; then
@@ -278,6 +289,52 @@ authorized_apply() {
     after=$(plan_comments) || return 1
     [[ $after == "$before" ]] || { note='Apply changed plan comments'; return 1; }
 }
+stale_apply() {
+    # Bash dynamic scope redirects helpers to the stale PR and restores pr/sha on every return.
+    # cleanup_pr keeps the original PR visible to cleanup() if a signal lands inside this function.
+    local cleanup_pr=$pr pr=$pr sha=$sha timestamp head advanced url actual end data body previous run
+    note='Stale apply setup or command failed'
+    timestamp=$(date -u +%Y%m%dT%H%M%SZ) || return 1
+    stale_base="e2e/stale-base-$timestamp"
+    stale_branch="e2e/stale-head-$timestamp"
+    git push origin "origin/$base:refs/heads/$stale_base" || return 1
+    stale_base_created=true
+    head=$(git commit-tree "origin/$base^{tree}" -p "origin/$base" -m 'test: stale apply e2e (do not merge)') || return 1
+    git push origin "$head:refs/heads/$stale_branch" || return 1
+    stale_head_created=true
+    url=$(gh pr create --repo "$repo" --draft --base "$stale_base" --head "$stale_branch" \
+        --title 'test: stale apply e2e (do not merge)' \
+        --body 'Temporary maintainer-run stale apply end-to-end test. Do not merge.') || return 1
+    stale_pr=${url##*/}
+    pr=$stale_pr
+    sha=$head
+    advanced=$(git commit-tree "origin/$base^{tree}" -p "origin/$base" -m "test: advance stale base $timestamp (do not merge)") || return 1
+    git push origin "$advanced:refs/heads/$stale_base" || return 1
+    end=$((SECONDS + timeout))
+    actual=''
+    while ((SECONDS < end)); do
+        actual=$(gh pr view "$pr" --repo "$repo" --json headRefOid -q .headRefOid) || return 1
+        [[ $actual == "$head" ]] && break
+        sleep 2
+    done
+    [[ $actual == "$head" ]] || { note="PR head did not become $head"; return 1; }
+    post_command '$terraform apply' || return 1
+    data=$(wait_for_completion "$run") || return 1
+    assert_json "$data" '.conclusion == "success"' 'Stale apply run did not succeed' || return 1
+    assert_json "$data" '[.jobs[] | select((.name | startswith("run on")) or .name == "post-run")] | length >= 2 and all(.conclusion == "skipped")' 'Stale apply jobs were not skipped' || return 1
+    body=$(latest_comment '') || return 1
+    # The role check runs before the freshness check, so a non-applier never reaches it.
+    [[ $body != *'does not have permission to apply'* ]] || { note='Inconclusive: the commenter lacks the applier role, so the stale check was not reached'; return 77; }
+    contains "$body" 'behind' || return 1
+    contains "$body" "\`$stale_base\`" || return 1
+    contains "$body" 'Update branch' || return 1
+    data=$(gh api --paginate "repos/$repo/commits/$sha/statuses" | jq -s 'add | map(select(.context == "terraform/apply"))') || return 1
+    assert_json "$data" 'length == 0' 'Stale apply created a commit status' || return 1
+    data=$(plan_comments) || return 1
+    assert_json "$data" 'length == 0' 'Stale PR received a plan comment' || return 1
+    data=$(apply_comments) || return 1
+    assert_json "$data" 'length == 0' 'Stale PR received an apply comment' || return 1
+}
 broken_fixture() {
     previous=$(newest_run pr-review.yml --branch "$branch") || return 1
     printf '\n\nresource "null_resource"   "broken" {\n    triggers   = { name="broken" }\n}\n' >> environments/test2/main.tf
@@ -412,6 +469,7 @@ scenario '$terraform plan' plan
 scenario 'Cancel early' cancel_early
 if "$toggle"; then scenario 'Unauthorized apply' unauthorized_apply; fi
 if ! "$skip_apply"; then scenario 'Authorized apply' authorized_apply; fi
+scenario 'Stale apply' stale_apply
 scenario 'Broken fixture' broken_fixture
 scenario 'Post-job rerun' post_job_rerun
 scenario 'Stale post-job rerun' stale_post_job_rerun

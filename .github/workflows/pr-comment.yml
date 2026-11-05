@@ -88,13 +88,6 @@ jobs:
           git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
           git cat-file -e "${HEAD_SHA}^{commit}"
 
-      - name: Fetch Base Branch
-        env:
-          BASE_REF: ${{ steps.pr-details.outputs.base_ref }}
-        run: |
-          # Do not rely on the API's baseRefOid, which is not guaranteed to be the base tip.
-          git fetch --no-tags origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
-
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
@@ -268,7 +261,6 @@ jobs:
             exit 1
           fi
           # re-check in case base advanced since the setup job; same role as the role re-checks above
-          git fetch --no-tags --depth=2147483647 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" "$HEAD_SHA"
           node "$GITHUB_WORKSPACE/.github/tfman/cli/index.mjs" check-base-ancestry --base-ref "$BASE_REF" --head-sha "$HEAD_SHA"
           TARGET_FLAGS=()
           if [ "$TF_TARGETS_JSON" != "[]" ]; then

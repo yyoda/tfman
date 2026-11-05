@@ -2,30 +2,48 @@ import { runCommand } from './utils.mjs';
 import { logger } from './logger.mjs';
 
 /**
- * Checks whether the PR head contains the fetched base branch tip.
+ * Refreshes the base and verifies that the pinned head contains its latest tip.
  * @param {string} baseRef - Base branch name.
- * @param {string} headSha - PR head commit SHA.
+ * @param {string} headSha - Pinned head commit SHA.
  * @param {string} root - Repository working directory.
- * @returns {Promise<{upToDate: boolean, behindBy: number}>}
+ * @param {object} [dependencies] - Command runner for tests.
+ * @returns {Promise<{status:'current'} | {status:'stale', behindBy:number} | {status:'unverified', detail:string}>}
  */
-export async function getBaseBranchLag(baseRef, headSha, root) {
-  if (typeof baseRef !== 'string' || !baseRef.trim()) {
-    throw new Error('Base branch name must be a non-empty string.');
+export async function checkBaseBranch(baseRef, headSha, root, { run = runCommand } = {}) {
+  if (typeof baseRef !== 'string' || !baseRef.trim() || typeof headSha !== 'string' || !headSha.trim()) {
+    return { status: 'unverified', detail: 'Base branch name and head SHA must be non-empty strings.' };
   }
   const baseTip = `refs/remotes/origin/${baseRef}`;
   try {
-    await runCommand('git', ['merge-base', '--is-ancestor', baseTip, headSha], { cwd: root });
-    return { upToDate: true, behindBy: 0 };
-  } catch (error) {
-    if (error.code !== 1) {
-      throw new Error(`Could not check base branch ancestry: ${error.message}`);
+    const { stdout: shallow } = await run('git', ['rev-parse', '--is-shallow-repository'], { cwd: root });
+    if (shallow !== 'true' && shallow !== 'false') {
+      return { status: 'unverified', detail: 'Could not determine whether repository history is shallow.' };
     }
-  }
-  try {
-    const { stdout } = await runCommand('git', ['rev-list', '--count', `${headSha}..${baseTip}`], { cwd: root });
-    return { upToDate: false, behindBy: Number(stdout) };
+    const fetchArgs = ['fetch', '--no-tags'];
+    if (shallow === 'true') fetchArgs.push('--unshallow');
+    fetchArgs.push('origin', `+refs/heads/${baseRef}:${baseTip}`);
+    if (shallow === 'true') fetchArgs.push(headSha);
+    await run('git', fetchArgs, { cwd: root });
+    if (shallow === 'true') {
+      const { stdout } = await run('git', ['rev-parse', '--is-shallow-repository'], { cwd: root });
+      if (stdout !== 'false') {
+        return { status: 'unverified', detail: 'Repository history is still incomplete after fetching.' };
+      }
+    }
+    try {
+      await run('git', ['merge-base', '--is-ancestor', baseTip, headSha], { cwd: root });
+      return { status: 'current' };
+    } catch (error) {
+      if (error.code !== 1) throw error;
+    }
+    const { stdout } = await run('git', ['rev-list', '--count', `${headSha}..${baseTip}`], { cwd: root });
+    const behindBy = Number(stdout);
+    if (!/^\d+$/.test(stdout) || !Number.isSafeInteger(behindBy) || behindBy <= 0) {
+      return { status: 'unverified', detail: 'Could not determine a positive number of commits behind the base branch.' };
+    }
+    return { status: 'stale', behindBy };
   } catch (error) {
-    throw new Error(`Could not count commits behind the base branch: ${error.message}`);
+    return { status: 'unverified', detail: `Could not verify base branch freshness: ${error?.message ?? String(error)}` };
   }
 }
 
@@ -35,6 +53,14 @@ export function baseBranchLagMessage(baseRef, behindBy) {
     + 'Apply runs against the PR head only, so applying now could revert changes already merged into the base.\n\n'
     + `Update the branch using GitHub's "Update branch" button or by merging \`${baseRef}\` into it, `
     + 're-check the refreshed plan, then comment `$terraform apply` again.';
+}
+
+/** Builds the apply rejection message when base freshness is unknown. */
+export function baseBranchUnverifiedMessage(baseRef) {
+  const base = typeof baseRef === 'string' && baseRef.trim()
+    ? '`' + baseRef.replace(/[\r\n]/g, ' ') + '`' : 'the base branch';
+  return `Apply was blocked because freshness against ${base} could not be verified. `
+    + 'This does not mean the branch is behind. Check the workflow run logs and comment `$terraform apply` again.';
 }
 
 /**

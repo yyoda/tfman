@@ -19,29 +19,23 @@ describe('PRComment stale branch guard', () => {
     assert.ok(parse.includes('BASE_REF: ${{ steps.pr-details.outputs.base_ref }}'));
     assert.ok(parse.includes('--base-ref "$BASE_REF"'));
   });
-  it('fetches the base tip before parsing the command', () => {
-    assert.ok(source.indexOf('- name: Fetch PR Head') < source.indexOf('- name: Fetch Base Branch'));
-    assert.ok(source.indexOf('- name: Fetch Base Branch') < source.indexOf('- name: Parse Comment and Generate Matrix'));
-    const fetch = step('Fetch Base Branch');
-    assert.ok(fetch.includes('BASE_REF: ${{ steps.pr-details.outputs.base_ref }}'));
-    assert.ok(fetch.includes('git fetch --no-tags origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"'));
-  });
-  it('deepens base and head and re-checks after both role checks before apply', () => {
+  it('re-checks after both role checks and before apply using only the CLI', () => {
     const apply = step('Terraform Apply');
     assert.ok(apply.includes('BASE_REF: ${{ needs.setup.outputs.base_ref }}'));
     assert.ok(apply.includes('HEAD_SHA: ${{ needs.setup.outputs.head_sha }}'));
-    const fetch = apply.indexOf('git fetch --no-tags --depth=2147483647 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" "$HEAD_SHA"');
-    const check = apply.indexOf('node "$GITHUB_WORKSPACE/.github/tfman/cli/index.mjs" check-base-ancestry --base-ref "$BASE_REF" --head-sha "$HEAD_SHA"');
+    const line = 'node "$GITHUB_WORKSPACE/.github/tfman/cli/index.mjs" check-base-ancestry --base-ref "$BASE_REF" --head-sha "$HEAD_SHA"';
+    const check = apply.indexOf(line);
+    assert.ok(check >= 0);
+    assert.equal(apply.split(line).length, 2);
     for (const role of ['if ! echo "$APPLIERS"', 'if ! echo "$ROLES"']) {
-      assert.ok(apply.indexOf(role) >= 0 && apply.indexOf(role) < fetch);
+      assert.ok(apply.indexOf(role) >= 0 && apply.indexOf(role) < check);
     }
-    assert.ok(fetch >= 0 && fetch < check);
     assert.ok(check < apply.indexOf('TARGET_FLAGS=()'));
     assert.ok(check < apply.indexOf('terraform apply -auto-approve'));
-    assert.doesNotMatch(apply, /continue-on-error|\|\| true/);
+    assert.doesNotMatch(apply, /git |continue-on-error|\|\| true/);
   });
   it('leaves plan unguarded and uses no fixed base branch', () => {
-    assert.doesNotMatch(step('Terraform Plan'), /base-ref|check-base-ancestry/);
+    assert.doesNotMatch(step('Terraform Plan'), /BASE_REF|merge-base|base-ref|check-base-ancestry/);
     assert.doesNotMatch(source, /origin\/main|refs\/heads\/main/);
   });
 });

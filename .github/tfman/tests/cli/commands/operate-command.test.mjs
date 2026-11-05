@@ -1,3 +1,9 @@
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { runCommand } from '../../../lib/utils.mjs';
+import { baseBranchLagMessage, baseBranchUnverifiedMessage } from '../../../lib/git.mjs';
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { run } from '../../../cli/commands/operate-command.mjs';
@@ -8,6 +14,7 @@ describe('cli/commands/operate-command', () => {
   describe('run (Orchestration Logic)', () => {
     const baseArgs = {
       'comment-body': 'MOCK_BODY', // Value doesn't matter because we mock the parser
+      'base-ref': 'base',
       'base-sha': 'base',
       'head-sha': 'head',
     };
@@ -27,7 +34,7 @@ describe('cli/commands/operate-command', () => {
 
       const result = await run(
         { ...baseArgs },
-        { _detectChanges, _selectTargets, _parseCommand }
+        { _detectChanges, _selectTargets, _parseCommand, _checkBaseBranch: async () => ({ status: 'current' }) }
       );
 
       // Verify correct execution path
@@ -52,7 +59,7 @@ describe('cli/commands/operate-command', () => {
 
       const result = await run(
         { ...baseArgs },
-        { _selectTargets, _detectChanges, _parseCommand }
+        { _selectTargets, _detectChanges, _parseCommand, _checkBaseBranch: async () => ({ status: 'current' }) }
       );
 
       assert.strictEqual(selectedTargetsArgs, 'dev/app');
@@ -68,7 +75,7 @@ describe('cli/commands/operate-command', () => {
 
       const result = await run(
         { ...baseArgs },
-        { _detectChanges, _selectTargets, _parseCommand }
+        { _detectChanges, _selectTargets, _parseCommand, _checkBaseBranch: async () => ({ status: 'current' }) }
       );
 
       assert.strictEqual(result.command, 'apply');
@@ -104,7 +111,7 @@ describe('cli/commands/operate-command', () => {
 
       const result = await run(
         { ...baseArgs },
-        { _detectChanges, _parseCommand }
+        { _detectChanges, _parseCommand, _checkBaseBranch: async () => ({ status: 'current' }) }
       );
 
       assert.strictEqual(detectCalled, false);
@@ -119,7 +126,7 @@ describe('cli/commands/operate-command', () => {
 
       const result = await run(
         { ...baseArgs },
-        { _detectChanges, _parseCommand }
+        { _detectChanges, _parseCommand, _checkBaseBranch: async () => ({ status: 'current' }) }
       );
 
       assert.strictEqual(result.command, 'error');
@@ -146,7 +153,7 @@ describe('cli/commands/operate-command', () => {
 
       const result = await run(
         { ...baseArgs },
-        { _detectChanges, _parseCommand }
+        { _detectChanges, _parseCommand, _checkBaseBranch: async () => ({ status: 'current' }) }
       );
 
       assert.strictEqual(result.command, 'error');
@@ -161,7 +168,7 @@ describe('cli/commands/operate-command', () => {
         files: [{ path: '../x', usedIn: ['*'] }]
       });
 
-      const result = await run({ ...baseArgs }, { _detectChanges, _parseCommand });
+      const result = await run({ ...baseArgs }, { _detectChanges, _parseCommand, _checkBaseBranch: async () => ({ status: 'current' }) });
 
       assert.deepStrictEqual(result, {
         command: 'error', targetDirs: [], tfTargets: [],
@@ -172,7 +179,7 @@ describe('cli/commands/operate-command', () => {
 });
 
 describe('operate-command roles', () => {
-  const baseArgs = { 'comment-body': '$terraform apply', 'base-sha': 'base', 'head-sha': 'head', actor: 'someone' };
+  const baseArgs = { 'comment-body': '$terraform apply', 'base-sha': 'base', 'head-sha': 'head', 'base-ref': 'base', actor: 'someone' };
 
   for (const roles of ['["planner"]', 'invalid json', '[]', '"applier"', 'null']) {
     it(`denies apply before target resolution with roles ${roles}`, async () => {
@@ -192,6 +199,7 @@ describe('operate-command roles', () => {
   for (const [command, roles] of [['apply', '["applier"]'], ['plan', '["planner"]'], ['plan', 'invalid json']]) {
     it(`allows ${command} with roles ${roles}`, async () => {
       const result = await run({ ...baseArgs, 'comment-body': `$terraform ${command}`, roles }, {
+        _checkBaseBranch: async () => ({ status: 'current' }),
         _detectChanges: async () => [{ path: 'env/x' }],
       });
       assert.strictEqual(result.done, false);
@@ -211,9 +219,9 @@ describe('operate-command base ancestry', () => {
       const resolve = async () => { targetCalls++; return targets; };
       const result = await run(args, {
         _parseCommand: () => ({ command: 'apply', targetDirs: explicit ? ['env/x'] : [], tfTargets: explicit ? ['module.x'] : [] }),
-        _getBaseBranchLag: async (...actual) => {
+        _checkBaseBranch: async (...actual) => {
           assert.deepStrictEqual(actual, ['release/1.x', 'head', '/workspace']);
-          return { upToDate: false, behindBy: 2 };
+          return { status: 'stale', behindBy: 2 };
         },
         _detectChanges: resolve, _selectTargets: resolve,
       });
@@ -221,47 +229,97 @@ describe('operate-command base ancestry', () => {
       assert.strictEqual(result.command, 'apply');
       assert.deepStrictEqual(result.targetDirs, []);
       assert.deepStrictEqual(result.tfTargets, []);
-      assert.match(result.message, /2 commits behind `release\/1.x`/);
+      assert.strictEqual(result.message, baseBranchLagMessage('release/1.x', 2));
       assert.match(result.message, /Update branch/);
       assert.match(result.message, /\$terraform apply/);
       assert.strictEqual(targetCalls, 0);
     });
   }
-  it('continues apply when up to date', async () => {
-    const result = await run(args, { _getBaseBranchLag: async () => ({ upToDate: true, behindBy: 0 }), _detectChanges: async () => targets });
-    assert.strictEqual(result.done, false);
-    assert.deepStrictEqual(result.targetDirs, targets);
-  });
-  for (const command of ['plan', 'apply']) {
-    it(`skips the check for ${command === 'plan' ? 'plan' : 'apply without base-ref'}`, async () => {
+  for (const command of ['plan', 'help', 'error']) {
+    it(`skips the check for ${command} without base-ref`, async () => {
       let calls = 0;
-      const input = { ...args, 'comment-body': `$terraform ${command}` };
-      if (command === 'apply') delete input['base-ref'];
+      const input = { ...args };
+      delete input['base-ref'];
       const result = await run(input, {
-        _getBaseBranchLag: async () => { calls++; return { upToDate: false, behindBy: 2 }; },
+        _parseCommand: () => ({ command, message: 'Command message' }),
+        _checkBaseBranch: async () => { calls++; return { status: 'stale', behindBy: 2 }; },
         _detectChanges: async () => targets,
       });
       assert.strictEqual(calls, 0);
-      assert.strictEqual(result.done, false);
+      assert.strictEqual(result.done, command !== 'plan');
       assert.strictEqual(result.command, command);
     });
   }
   it('fails closed on lookup errors', async () => {
-    const result = await run(args, { _getBaseBranchLag: async () => { throw new Error('Lookup failed'); } });
-    assert.deepStrictEqual(result, { command: 'apply', done: true, targetDirs: [], tfTargets: [], message: 'Lookup failed' });
+    const original = console.error;
+    const errors = [];
+    console.error = message => errors.push(message);
+    try {
+      const result = await run(args, { _checkBaseBranch: async () => ({ status: 'unverified', detail: 'Lookup failed' }) });
+      assert.deepStrictEqual(result, { command: 'apply', done: true, targetDirs: [], tfTargets: [], message: baseBranchUnverifiedMessage('release/1.x') });
+      assert.ok(!result.message.includes('Lookup failed'));
+      assert.deepStrictEqual(errors, ['Lookup failed']);
+    } finally {
+      console.error = original;
+    }
   });
-  it('fails closed on an empty base-ref', async () => {
-    const result = await run({ ...args, 'base-ref': '' });
-    assert.strictEqual(result.done, true);
-    assert.strictEqual(result.command, 'apply');
-    assert.match(result.message, /non-empty string/);
-  });
-  it('keeps role denial ahead of ancestry lookup', async () => {
-    let calls = 0;
-    const result = await run({ ...args, roles: '["planner"]', actor: 'someone' }, {
-      _getBaseBranchLag: async () => { calls++; },
+  for (const base of [undefined, '', '   ']) {
+    it(`requires a non-blank base-ref for apply: ${JSON.stringify(base)}`, async () => {
+      let calls = 0;
+      const logged = [];
+      const original = console.error;
+      console.error = message => logged.push(message);
+      try {
+        const input = { ...args, 'base-ref': base };
+        if (base === undefined) delete input['base-ref'];
+        const result = await run(input, {
+          _checkBaseBranch: async () => { calls++; },
+          _detectChanges: async () => { calls++; },
+          _selectTargets: async () => { calls++; },
+        });
+        assert.deepStrictEqual(result, {
+          command: 'apply', done: true, targetDirs: [], tfTargets: [],
+          message: baseBranchUnverifiedMessage(base),
+        });
+        assert.strictEqual(calls, 0);
+        assert.deepStrictEqual(logged, ['--base-ref is required for apply']);
+      } finally {
+        console.error = original;
+      }
     });
-    assert.strictEqual(calls, 0);
-    assert.deepStrictEqual(result, { command: 'apply', done: true, targetDirs: [], tfTargets: [], message: 'User someone does not have permission to apply. Required role: applier.' });
+  }
+});
+
+
+it('runs the real operate-command CLI against stale and current heads', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'tfman-operate-ancestry-'));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+    await assert.rejects(access(root), { code: 'ENOENT' });
   });
+  const git = (...args) => runCommand('git', args, { cwd: root });
+  await git('init', '-q', '-b', 'release/1.x');
+  await git('config', 'user.name', 'Test User');
+  await git('config', 'user.email', 'test@example.com');
+  await git('commit', '--allow-empty', '-qm', 'Initial');
+  const head = (await git('rev-parse', 'HEAD')).stdout;
+  await git('commit', '--allow-empty', '-qm', 'Advance base');
+  const tip = (await git('rev-parse', 'HEAD')).stdout;
+  const remote = join(root, 'remote.git');
+  await git('clone', '--bare', root, remote);
+  await git('remote', 'add', 'origin', remote);
+  // An explicit target resolves through .tfdeps.json alone, so the current head reaches target selection.
+  await writeFile(join(root, '.tfdeps.json'), JSON.stringify({ dirs: [{ path: 'env/x', providers: [] }] }));
+  const cli = fileURLToPath(new URL('../../../cli/index.mjs', import.meta.url));
+  const invoke = async sha => {
+    const { stdout } = await runCommand(process.execPath, [cli, 'operate-command', '--comment-body', '$terraform apply env/x', '--base-sha', 'x', '--head-sha', sha, '--base-ref', 'release/1.x', '--root', root], { cwd: root });
+    return JSON.parse(stdout);
+  };
+  const stale = await invoke(head);
+  assert.strictEqual(stale.done, true);
+  assert.strictEqual(stale.command, 'apply');
+  assert.deepStrictEqual(stale.targetDirs, []);
+  assert.strictEqual(stale.message, baseBranchLagMessage('release/1.x', 1));
+  const current = await invoke(tip);
+  assert.deepStrictEqual(current, { command: 'apply', targetDirs: [{ path: 'env/x', providers: [] }], tfTargets: [], message: '', done: false });
 });
